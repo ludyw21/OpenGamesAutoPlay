@@ -7,7 +7,6 @@ import ctypes
 from keyboard_mapping import NOTE_TO_KEY
 from collections import defaultdict
 import weakref
-from PyQt5.QtCore import QObject, pyqtSignal
 
 # 延迟导入 win32gui
 def get_win32gui():
@@ -33,11 +32,8 @@ def check_admin_rights():
         return False
     return True
 
-class MidiPlayer(QObject):  # 继承QObject以支持信号
-    window_switch_failed = pyqtSignal()  # 添加新信号
-    
+class MidiPlayer:
     def __init__(self):
-        super().__init__()  # 调用父类初始化
         self._win32gui = get_win32gui()
         # 检查管理员权限
         if not check_admin_rights():
@@ -48,6 +44,8 @@ class MidiPlayer(QObject):  # 继承QObject以支持信号
         self.current_file = None
         self.play_thread = None
         self._pressed_keys = set()
+        self._lock = threading.Lock()  # 添加锁定义
+        self.window_switch_failed_callback = None  # 回调函数
         
         # 线程锁
         self._lock = threading.Lock()
@@ -251,18 +249,47 @@ class MidiPlayer(QObject):  # 继承QObject以支持信号
             return []
 
     def _decode_track_name(self, name):
-        """解码音轨名称"""
+        """解码音轨名称，优化中文支持"""
         if isinstance(name, bytes):
-            # 尝试不同的编码方式
-            encodings = ['utf-8', 'gbk', 'gb2312', 'shift-jis', 'ascii']
+            # 优先尝试中文相关编码
+            encodings = ['gbk', 'gb2312', 'utf-8', 'shift-jis', 'cp936', 'utf-16']
+            best_result = None
+            best_score = -1
+            
             for encoding in encodings:
                 try:
                     decoded = name.decode(encoding)
-                    # 如果成功解码并且结果看起来是有效的
-                    if decoded and not any(ord(c) < 32 for c in decoded):
-                        return decoded
-                except UnicodeDecodeError:  # 替换裸异常为具体异常类型
+                    # 计算解码结果的有效性分数
+                    score = 0
+                    # 移除控制字符
+                    clean_decoded = ''.join(c for c in decoded if ord(c) >= 32 or c == '\n' or c == '\t')
+                    
+                    # 如果解码结果不为空
+                    if clean_decoded:
+                        # 增加包含中文字符的分数
+                        chinese_chars = sum(1 for c in clean_decoded if '\u4e00' <= c <= '\u9fff')
+                        if chinese_chars > 0:
+                            score += chinese_chars * 2  # 中文优先
+                        
+                        # 增加有效字符数量的分数
+                        score += len(clean_decoded)
+                        
+                        # 更新最佳结果
+                        if score > best_score:
+                            best_score = score
+                            best_result = clean_decoded
+                except UnicodeDecodeError:
                     continue
+            
+            # 返回得分最高的解码结果
+            if best_result:
+                return best_result
+                
+            # 最后的尝试：忽略错误字符
+            try:
+                return name.decode('utf-8', errors='replace')
+            except:
+                pass
         elif isinstance(name, str):
             return name
         return None
@@ -337,7 +364,8 @@ class MidiPlayer(QObject):  # 继承QObject以支持信号
             
             if not window_list:
                 print("未找到任何匹配的游戏窗口")
-                self.window_switch_failed.emit()  # 发送信号
+                if self.window_switch_failed_callback:
+                    self.window_switch_failed_callback()  # 调用回调函数
                 self.playing = False  # 停止播放
                 return False
                 
@@ -365,13 +393,15 @@ class MidiPlayer(QObject):  # 继承QObject以支持信号
                 
             # 如果所有窗口都切换失败
             print("所有目标窗口都无法切换")
-            self.window_switch_failed.emit()  # 发送信号
+            if self.window_switch_failed_callback:
+                self.window_switch_failed_callback()  # 调用回调函数
             self.playing = False  # 停止播放
             return False
             
         except Exception as e:
             print(f"切换到游戏窗口时出错: {str(e)}")
-            self.window_switch_failed.emit()  # 发送信号
+            if self.window_switch_failed_callback:
+                self.window_switch_failed_callback()  # 调用回调函数
             self.playing = False  # 停止播放
             return False
 
@@ -536,7 +566,8 @@ class MidiPlayer(QObject):  # 继承QObject以支持信号
             # 在恢复播放前检查窗口状态
             if not self._switch_to_game_window():
                 print("无法找到目标窗口，无法恢复播放")
-                self.window_switch_failed.emit()  # 发送窗口切换失败信号
+                if self.window_switch_failed_callback:
+                    self.window_switch_failed_callback()  # 调用回调函数
                 return False
             
             with self._lock:
@@ -782,4 +813,4 @@ class MidiPlayer(QObject):  # 继承QObject以支持信号
                 
         except Exception as e:
             print(f"播放MIDI文件时出错: {str(e)}")
-            self.stop() 
+            self.stop()
