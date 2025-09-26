@@ -100,6 +100,7 @@ class MainWindow:
         
         self.root.geometry(f"{scaled_width}x{scaled_height}")
         self.root.minsize(scaled_width, scaled_height)
+        self.root.resizable(True, True)  # 允许调整窗口大小
         
         # 设置主题
         self.style = ttkb.Style(theme="pink")
@@ -221,10 +222,15 @@ class MainWindow:
             main_frame = ttk.Frame(self.root, padding=10)
             main_frame.pack(fill=BOTH, expand=YES)
             
-            # 创建左侧框架
+            # 使用grid布局确保左右两栏比例固定
+            main_frame.grid_columnconfigure(0, weight=1)  # 左侧占1份
+            main_frame.grid_columnconfigure(1, weight=2)  # 右侧占2份
+            
+            # 创建左侧框架 - 固定占1/3宽度
             left_frame = ttk.LabelFrame(main_frame, text="文件管理", padding=10)
-            left_frame.pack(side=LEFT, fill=BOTH, expand=YES, padx=5, pady=5)
-            left_frame.configure(width=260)
+            left_frame.grid(row=0, column=0, sticky=NSEW, padx=5, pady=5)
+            left_frame.grid_propagate(False)  # 防止内部组件改变框架大小
+            left_frame.configure(width=260, height=400)  # 设置固定高度和宽度
             
             # 置顶复选框
             top_frame = ttk.Frame(left_frame)
@@ -265,9 +271,11 @@ class MainWindow:
             self.song_list.pack(fill=BOTH, expand=YES, pady=5)
             self.song_list.bind("<<TreeviewSelect>>", lambda e: self.song_selected())
             
-            # 右侧框架
+            # 右侧框架 - 固定占2/3宽度
             right_frame = ttk.LabelFrame(main_frame, text="播放控制", padding=10)
-            right_frame.pack(side=RIGHT, fill=BOTH, expand=YES, padx=5, pady=5)
+            right_frame.grid(row=0, column=1, sticky=NSEW, padx=5, pady=5)
+            right_frame.grid_propagate(False)  # 防止内部组件改变框架大小
+            right_frame.configure(width=520, height=400)  # 设置固定宽度和高度（左侧260，右侧520，保持1:2比例）
             
             # 创建音轨详情区域
             tracks_label = ttk.Label(right_frame, text="音轨详情", font=('Arial', 12, 'bold'))
@@ -277,10 +285,10 @@ class MainWindow:
             self.current_song_label = ttk.Label(right_frame, text="当前歌曲：未选择")
             self.current_song_label.pack(anchor=W, pady=2)
             
-            # 创建音轨列表
+            # 创建音轨列表 - 固定宽度和高度
             self.tracks_list = ttk.Treeview(right_frame, columns=["track"], show="headings", height=8)
             self.tracks_list.heading("track", text="音轨列表")
-            self.tracks_list.column("track", width=200)
+            self.tracks_list.column("track", width=480, stretch=False)  # 增加宽度，确保完整显示
             self.tracks_list.pack(fill=X, pady=5)
             self.tracks_list.bind("<<TreeviewSelect>>", lambda e: self.track_selected())
             
@@ -590,10 +598,17 @@ class MainWindow:
             for item in self.tracks_list.get_children():
                 self.tracks_list.delete(item)
             
-            # 解析MIDI文件
+            # 解析MIDI文件 - 使用更安全的编码处理方式
             import mido
             print(f"正在加载MIDI文件: {file_path}")
-            mid = mido.MidiFile(file_path, charset='cp1252')  # 尝试使用cp1252作为默认编码
+            # 先尝试使用二进制模式打开，然后使用不同编码方案尝试解析
+            try:
+                mid = mido.MidiFile(file_path, charset='utf-8')  # 优先尝试UTF-8
+            except UnicodeDecodeError:
+                try:
+                    mid = mido.MidiFile(file_path, charset='cp1252')  # 尝试cp1252
+                except UnicodeDecodeError:
+                    mid = mido.MidiFile(file_path, charset='cp932')  # 最后尝试日文编码
             
             # 初始化音轨信息列表
             self.tracks_info = []
