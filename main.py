@@ -470,6 +470,9 @@ class MainWindow:
         if not isinstance(text, str):
             return text
         
+        # 记录原始文本用于调试
+        original_text = text
+        
         # 尝试检测常见的错误解码模式并修复
         try:
             # 1. 首先尝试处理UTF-8被错误解码为Latin-1的情况（例如"æ— æ‡é¢˜" -> "无标题"）
@@ -477,28 +480,106 @@ class MainWindow:
             try:
                 # 对于包含UTF-8特征字符的字符串，优先尝试这种修复
                 if any(192 <= ord(c) <= 255 for c in text):
-                    utf8_fixed = text.encode('iso-8859-1').decode('utf-8')
+                    # 使用errors='replace'来避免编码错误
+                    utf8_fixed = text.encode('latin-1', errors='replace').decode('utf-8', errors='replace')
+                    # 检查是否有中文字符（表示可能修复成功）
                     if any('\u4e00' <= c <= '\u9fff' for c in utf8_fixed):
+                        # print(f"UTF-8修复成功: {original_text} -> {utf8_fixed}")
                         return utf8_fixed
-            except:
-                pass
+            except Exception as e:
+                print(f"UTF-8修复失败: {e}")
             
-            # 2. 尝试ISO-8859-1 -> GBK转换（常见的中文乱码模式）
-            gbk_fixed = text.encode('iso-8859-1').decode('gbk')
-            if any('\u4e00' <= c <= '\u9fff' for c in gbk_fixed):
-                return gbk_fixed
+            # 2. 尝试使用cp1252作为中间编码（Windows常用的Latin-1扩展）
+            try:
+                if any(192 <= ord(c) <= 255 for c in text):
+                    # 先转换为cp1252字节，再尝试UTF-8解码
+                    cp1252_fixed = text.encode('cp1252', errors='replace').decode('utf-8', errors='replace')
+                    if any('\u4e00' <= c <= '\u9fff' for c in cp1252_fixed):
+                        # print(f"CP1252修复成功: {original_text} -> {cp1252_fixed}")
+                        return cp1252_fixed
+            except Exception as e:
+                print(f"CP1252修复失败: {e}")
             
-            # 3. 尝试ISO-8859-1 -> GB2312转换
-            gb2312_fixed = text.encode('iso-8859-1').decode('gb2312')
-            if any('\u4e00' <= c <= '\u9fff' for c in gb2312_fixed):
-                return gb2312_fixed
+            # 3. 尝试ISO-8859-1 -> GBK转换（常见的中文乱码模式）
+            try:
+                # 使用errors='replace'确保即使有特殊字符也能继续
+                gbk_fixed = text.encode('latin-1', errors='replace').decode('gbk', errors='replace')
+                if any('\u4e00' <= c <= '\u9fff' for c in gbk_fixed):
+                        # print(f"GBK修复成功: {original_text} -> {gbk_fixed}")
+                        return gbk_fixed
+            except Exception as e:
+                print(f"GBK修复失败: {e}")
             
-            # 4. 尝试ISO-8859-1 -> GB18030转换（支持更多字符）
-            gb18030_fixed = text.encode('iso-8859-1').decode('gb18030')
-            if any('\u4e00' <= c <= '\u9fff' for c in gb18030_fixed):
-                return gb18030_fixed
-        except:
-            pass
+            # 4. 尝试ISO-8859-1 -> GB2312转换
+            try:
+                gb2312_fixed = text.encode('latin-1', errors='replace').decode('gb2312', errors='replace')
+                if any('\u4e00' <= c <= '\u9fff' for c in gb2312_fixed):
+                        # print(f"GB2312修复成功: {original_text} -> {gb2312_fixed}")
+                        return gb2312_fixed
+            except Exception as e:
+                print(f"GB2312修复失败: {e}")
+            
+            # 5. 尝试ISO-8859-1 -> GB18030转换（支持更多字符）
+            try:
+                gb18030_fixed = text.encode('latin-1', errors='replace').decode('gb18030', errors='replace')
+                if any('\u4e00' <= c <= '\u9fff' for c in gb18030_fixed):
+                        # print(f"GB18030修复成功: {original_text} -> {gb18030_fixed}")
+                        return gb18030_fixed
+            except Exception as e:
+                print(f"GB18030修复失败: {e}")
+            
+            # 6. 尝试多种编码组合的复杂转换
+            try:
+                if any(192 <= ord(c) <= 255 for c in text):
+                    # 尝试多种编码组合
+                    for encoding1 in ['latin-1', 'cp1252']:
+                        for encoding2 in ['utf-8', 'gbk', 'gb18030']:
+                            try:
+                                # 先转换为bytes再尝试其他编码
+                                combined_fixed = text.encode(encoding1, errors='replace').decode(encoding2, errors='replace')
+                                if any('\u4e00' <= c <= '\u9fff' for c in combined_fixed) and combined_fixed != text:
+                                    # print(f"组合修复成功 ({encoding1}->{encoding2}): {original_text} -> {combined_fixed}")
+                                    return combined_fixed
+                            except Exception:
+                                continue
+            except Exception as e:
+                print(f"组合修复失败: {e}")
+            
+            # 7. 尝试更复杂的三重编码修复
+            try:
+                if any(192 <= ord(c) <= 255 for c in text):
+                    # 先Latin-1 -> GBK -> UTF-8的三重转换
+                    triple_fixed = text.encode('latin-1', errors='replace').decode('gbk', errors='replace').encode('utf-8', errors='replace').decode('utf-8', errors='replace')
+                    if any('\u4e00' <= c <= '\u9fff' for c in triple_fixed) and triple_fixed != text:
+                        # print(f"三重修复成功: {original_text} -> {triple_fixed}")
+                        return triple_fixed
+            except Exception as e:
+                print(f"三重修复失败: {e}")
+                
+            # 8. 针对特殊情况：检测是否是典型的UTF-8编码错误模式
+            try:
+                # 检查是否包含连续的UTF-8特征字节模式
+                if any(0xC0 <= ord(c) <= 0xDF for c in text) or any(0xE0 <= ord(c) <= 0xEF for c in text):
+                    # 这可能是UTF-8被错误解码
+                    # 使用原始字节重新解码
+                    try:
+                        # 获取原始字节表示，然后尝试正确解码
+                        raw_bytes = ''.join(chr(ord(c)) for c in text).encode('latin-1', errors='replace')
+                        utf8_direct = raw_bytes.decode('utf-8', errors='replace')
+                        if any('\u4e00' <= c <= '\u9fff' for c in utf8_direct) and utf8_direct != text:
+                            # print(f"直接UTF-8解码修复: {original_text} -> {utf8_direct}")
+                            return utf8_direct
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"特征检测修复失败: {e}")
+                
+        except Exception as e:
+            print(f"乱码修复过程出错: {e}")
+        
+        # 如果所有修复都失败，记录未修复的文本
+        if any(192 <= ord(c) <= 255 for c in text):
+            print(f"未能修复的乱码: {original_text}")
         
         return text
     
@@ -511,6 +592,7 @@ class MainWindow:
             
             # 解析MIDI文件
             import mido
+            print(f"正在加载MIDI文件: {file_path}")
             mid = mido.MidiFile(file_path, charset='cp1252')  # 尝试使用cp1252作为默认编码
             
             # 初始化音轨信息列表
@@ -526,16 +608,18 @@ class MainWindow:
                     continue
                 
                 # 尝试从音轨中提取名称
-                track_name = f"音轨 {i}"
+                original_name = None
                 for msg in track:
                     if msg.type == 'track_name' and msg.name:
-                        # 使用专门的乱码修复方法处理音轨名称
-                        fixed_name = self._fix_mojibake(msg.name)
-                        track_name = fixed_name
+                        original_name = msg.name
                         break
                 
-                # 构建显示名称
-                display_name = f"{track_name} ({note_count}个音符)"
+                # 使用专门的乱码修复方法处理音轨名称
+                fixed_name = self._fix_mojibake(original_name) if original_name else f"未命名"
+                print(f"音轨{i+1} - 原始名称: {original_name}, 修复后: {fixed_name}")
+                
+                # 构建显示名称，添加音轨标号
+                display_name = f"音轨{i+1}：{fixed_name} ({note_count}个音符)"
                 
                 # 添加到Treeview
                 self.tracks_list.insert('', END, values=[display_name], tags=(i,))
@@ -548,8 +632,10 @@ class MainWindow:
             
             # 保存MIDI文件路径
             self.current_file_path = file_path
+            print(f"成功加载MIDI文件，共找到{len(self.tracks_info)}个有效音轨")
             
         except Exception as e:
+            print(f"加载MIDI文件时出错: {str(e)}")
             messagebox.showerror("MIDI错误", f"加载MIDI文件时出错: {str(e)}")
     
     def track_selected(self, event=None):
