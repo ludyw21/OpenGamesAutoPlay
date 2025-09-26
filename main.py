@@ -111,6 +111,12 @@ class MainWindow:
         self.config = self.config_manager.data
         self.last_directory = self.config.get('last_directory', '')
         
+        # 初始化stay_on_top_var（提前初始化以避免属性错误）
+        self.stay_on_top_var = tk.BooleanVar()
+        
+        # 初始化current_song_label为None，确保在setup_ui完成前不会报错
+        self.current_song_label = None
+        
         # 添加键盘事件防抖动
         self.last_key_time = 0
         self.key_cooldown = 0.2  # 200ms冷却时间
@@ -128,6 +134,7 @@ class MainWindow:
         # 初始化其他属性
         self.current_index = -1
         self.midi_files = []
+        self.tracks_info = []  # 初始化音轨信息列表
         
         try:
             self.midi_player = MidiPlayer()
@@ -222,15 +229,16 @@ class MainWindow:
             main_frame = ttk.Frame(self.root, padding=10)
             main_frame.pack(fill=BOTH, expand=YES)
             
-            # 使用grid布局确保左右两栏比例固定
-            main_frame.grid_columnconfigure(0, weight=1)  # 左侧占1份
-            main_frame.grid_columnconfigure(1, weight=2)  # 右侧占2份
+            # 设置行权重使内容占满高度
+            main_frame.grid_rowconfigure(0, weight=1)  # 行占满高度
+            # 右侧列设置权重使其自适应
+            main_frame.grid_columnconfigure(1, weight=1)  # 右侧自适应
             
-            # 创建左侧框架 - 固定占1/3宽度
+            # 创建左侧框架 - 固定宽度180px
             left_frame = ttk.LabelFrame(main_frame, text="文件管理", padding=10)
-            left_frame.grid(row=0, column=0, sticky=NSEW, padx=5, pady=5)
+            left_frame.grid(row=0, column=0, sticky='nsw', padx=5, pady=5)  # 只设置nsw，不包括e，防止拉伸
+            left_frame.config(width=180)  # 使用config方法设置宽度
             left_frame.grid_propagate(False)  # 防止内部组件改变框架大小
-            left_frame.configure(width=260, height=400)  # 设置固定高度和宽度
             
             # 置顶复选框
             top_frame = ttk.Frame(left_frame)
@@ -264,31 +272,33 @@ class MainWindow:
             self.search_input.bind("<FocusIn>", lambda e: self.search_input.delete(0, END))
             self.search_input.bind("<KeyRelease>", lambda e: self.filter_songs())
             
-            # 歌曲列表
-            self.song_list = ttk.Treeview(left_frame, columns=["song"], show="headings", height=15)
-            self.song_list.heading("song", text="歌曲列表")
-            self.song_list.column("song", width=200)
+            # 歌曲列表 - 适应左侧框架宽度
+            self.song_list = ttk.Treeview(left_frame, columns=["song"], show="headings")  # 适配左侧宽度
+            self.song_list.heading("song", text="歌曲列表", anchor='center')  # 设置标题居中
+            self.song_list.column("song", stretch=YES)  # 允许拉伸以占满空间
             self.song_list.pack(fill=BOTH, expand=YES, pady=5)
             self.song_list.bind("<<TreeviewSelect>>", lambda e: self.song_selected())
             
-            # 右侧框架 - 固定占2/3宽度
+            # 右侧框架 - 自适应宽度
             right_frame = ttk.LabelFrame(main_frame, text="播放控制", padding=10)
-            right_frame.grid(row=0, column=1, sticky=NSEW, padx=5, pady=5)
-            right_frame.grid_propagate(False)  # 防止内部组件改变框架大小
-            right_frame.configure(width=520, height=400)  # 设置固定宽度和高度（左侧260，右侧520，保持1:2比例）
+            right_frame.grid(row=0, column=1, sticky=NSEW, padx=5, pady=5)  # 全方向拉伸，使其自适应
             
             # 创建音轨详情区域
             tracks_label = ttk.Label(right_frame, text="音轨详情", font=('Arial', 12, 'bold'))
             tracks_label.pack(anchor=W, pady=5)
             
-            # 当前歌曲名称标签
-            self.current_song_label = ttk.Label(right_frame, text="当前歌曲：未选择")
-            self.current_song_label.pack(anchor=W, pady=2)
+            # 当前歌曲名称标签 - 设置为不换行，超出部分不显示，占满整行
+            song_label_frame = ttk.Frame(right_frame)
+            song_label_frame.pack(fill=X, pady=2)
             
-            # 创建音轨列表 - 固定宽度和高度
-            self.tracks_list = ttk.Treeview(right_frame, columns=["track"], show="headings", height=8)
+            # 设置文本左对齐，wraplength=0确保不换行，超出部分会自动截断
+            self.current_song_label = ttk.Label(song_label_frame, text="当前歌曲：未选择", anchor=W, wraplength=0, justify=LEFT)
+            self.current_song_label.pack(fill=X, expand=True)
+            
+            # 创建音轨列表 - 自适应右侧宽度
+            self.tracks_list = ttk.Treeview(right_frame, columns=["track"], show="headings")
             self.tracks_list.heading("track", text="音轨列表")
-            self.tracks_list.column("track", width=480, stretch=False)  # 增加宽度，确保完整显示
+            self.tracks_list.column("track", stretch=YES)  # 允许列拉伸以适应右侧宽度
             self.tracks_list.pack(fill=X, pady=5)
             self.tracks_list.bind("<<TreeviewSelect>>", lambda e: self.track_selected())
             
@@ -330,26 +340,27 @@ class MainWindow:
             )
             self.preview_button.pack(side=LEFT, padx=5, expand=YES, fill=X)
             
-            # 添加使用说明
-            info_frame = ttk.LabelFrame(right_frame, text="使用说明", padding=10)
-            info_frame.pack(fill=X, pady=10)
+            # 创建一个容器框架来并列显示使用说明和快捷键说明，放置在底部
+            bottom_container = ttk.Frame(right_frame)
+            bottom_container.pack(side=BOTTOM, fill=X, pady=5, anchor='s')
             
-            usage_text = "注意：工具支持36键模式!\n" + \
-                         "使用说明：\n" + \
-                         "1. 使用管理员权限启动\n" + \
-                         "2. 选择MIDI文件\n" + \
-                         "3. 选择要播放的音轨\n" + \
-                         "4. 点击播放按钮开始演奏"
+            # 添加使用说明，确保底部对齐
+            info_frame = ttk.LabelFrame(bottom_container, text="使用说明", padding=10)
+            info_frame.pack(side=LEFT, fill=X, expand=True, padx=(0, 5), anchor='s')
+            
+            usage_text = "1. 使用管理员权限启动\n" + \
+                         "2. 选择MIDI文件和音轨\n" + \
+                         "3. 点击播放按钮开始演奏\n" + \
+                         "4. 支持36键模式"
             
             usage_label = ttk.Label(info_frame, text=usage_text, justify=LEFT)
             usage_label.pack(fill=X)
             
-            # 添加快捷键说明
-            shortcut_frame = ttk.LabelFrame(right_frame, text="快捷键", padding=10)
-            shortcut_frame.pack(fill=X, pady=5)
+            # 添加快捷键说明，确保底部对齐
+            shortcut_frame = ttk.LabelFrame(bottom_container, text="快捷键说明", padding=10)
+            shortcut_frame.pack(side=LEFT, fill=X, expand=True, padx=(5, 0), anchor='s')
             
-            shortcut_text = "快捷键说明：\n" + \
-                            "Alt + 减号键(-) 播放/暂停\n" + \
+            shortcut_text = "Alt + 减号键(-) 播放/暂停\n" + \
                             "Alt + 等号键(=) 停止播放"
             
             shortcut_label = ttk.Label(shortcut_frame, text=shortcut_text, justify=LEFT)
@@ -463,15 +474,17 @@ class MainWindow:
         file_path = self.song_list.item(item, "tags")[0]
         self.current_file = file_path
         
-        # 更新当前歌曲标签
-        file_name = os.path.basename(file_path)
-        self.current_song_label.config(text=f"当前歌曲：{file_name}")
+        # 更新当前歌曲标签（确保标签已初始化）
+        if hasattr(self, 'current_song_label') and self.current_song_label is not None:
+            file_name = os.path.basename(file_path)
+            self.current_song_label.config(text=f"当前歌曲：{file_name}")
         
         # 解析MIDI文件，获取音轨信息
         self._load_midi_tracks(file_path)
         
-        # 启用预览按钮
-        self.preview_button.config(state=NORMAL)
+        # 启用预览按钮（确保按钮已初始化）
+        if hasattr(self, 'preview_button') and self.preview_button is not None:
+            self.preview_button.config(state=NORMAL)
     
     def _fix_mojibake(self, text):
         """修复已被错误解码的字符串（ mojibake ）"""
