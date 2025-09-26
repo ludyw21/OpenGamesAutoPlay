@@ -123,6 +123,8 @@ class MainWindow:
         
         # 初始化预览状态
         self.is_previewing = False
+        # 试听MIDI相关状态
+        self.is_playing_midi = False
         
         # 初始化pygame mixer（如果还没有初始化）
         if not pygame.mixer.get_init():
@@ -340,6 +342,16 @@ class MainWindow:
             )
             self.preview_button.pack(side=LEFT, padx=5, expand=YES, fill=X)
             
+            # 试听MIDI按钮 - 直接播放原始MIDI文件
+            self.midi_play_button = ttk.Button(
+                control_frame, 
+                text="试听MIDI", 
+                command=self.toggle_midi_playback,
+                style="Info.TButton",
+                state=DISABLED
+            )
+            self.midi_play_button.pack(side=LEFT, padx=5, expand=YES, fill=X)
+            
             # 创建一个容器框架来并列显示使用说明和快捷键说明，放置在底部
             bottom_container = ttk.Frame(right_frame)
             bottom_container.pack(side=BOTTOM, fill=X, pady=5, anchor='s')
@@ -485,6 +497,13 @@ class MainWindow:
         # 启用预览按钮（确保按钮已初始化）
         if hasattr(self, 'preview_button') and self.preview_button is not None:
             self.preview_button.config(state=NORMAL)
+        
+        # 如果当前正在播放MIDI，自动切换到新选择的MIDI文件
+        if hasattr(self, 'is_playing_midi') and self.is_playing_midi:
+            # 停止当前播放的MIDI
+            self.stop_midi_playback()
+            # 自动开始播放新选择的MIDI
+            self.start_midi_playback()
     
     def _fix_mojibake(self, text):
         """修复已被错误解码的字符串（ mojibake ）"""
@@ -661,6 +680,10 @@ class MainWindow:
             # 保存MIDI文件路径
             self.current_file_path = file_path
             print(f"成功加载MIDI文件，共找到{len(self.tracks_info)}个有效音轨")
+                
+            # 启用试听MIDI按钮
+            if hasattr(self, 'midi_play_button'):
+                self.midi_play_button.config(state=NORMAL)
             
         except Exception as e:
             print(f"加载MIDI文件时出错: {str(e)}")
@@ -694,6 +717,10 @@ class MainWindow:
         """开始播放"""
         try:
             if hasattr(self, 'current_file_path') and self.current_file_path:
+                # 如果正在播放MIDI，先停止
+                if hasattr(self, 'is_playing_midi') and self.is_playing_midi:
+                    self.stop_midi_playback()
+                
                 # 获取选中的音轨
                 selected_track = None
                 if hasattr(self.midi_player, 'selected_track'):
@@ -729,9 +756,73 @@ class MainWindow:
             print(f"停止播放时出错: {str(e)}")
             messagebox.showerror("播放错误", f"停止播放时出错: {str(e)}")
     
+    def toggle_midi_playback(self):
+        """切换MIDI直接播放状态"""
+        if not self.is_playing_midi:
+            self.start_midi_playback()
+        else:
+            self.stop_midi_playback()
+    
+    def start_midi_playback(self):
+        """直接播放原始MIDI文件"""
+        try:
+            if hasattr(self, 'current_file_path') and self.current_file_path:
+                # 停止可能正在进行的预览
+                if hasattr(self, 'is_previewing') and self.is_previewing:
+                    self.stop_preview()
+                
+                # 停止可能正在进行的MIDI播放
+                pygame.mixer.music.stop()
+                
+                # 开始播放MIDI文件
+                pygame.mixer.music.load(self.current_file_path)
+                pygame.mixer.music.play()
+                
+                # 更新状态
+                self.is_playing_midi = True
+                # 使用ttkbootstrap的内置Danger样式
+                self.midi_play_button.config(text="停止MIDI")
+                
+                # 禁用其他播放按钮
+                self.play_button.config(state=DISABLED)
+                self.preview_button.config(state=DISABLED)
+                
+                # 定期检查播放是否结束
+                self.check_midi_playback()
+                
+        except Exception as e:
+            print(f"播放MIDI文件时出错: {str(e)}")
+            messagebox.showerror("播放错误", f"无法播放MIDI文件: {str(e)}")
+            self.is_playing_midi = False
+    
+    def stop_midi_playback(self):
+        """停止直接播放MIDI文件"""
+        pygame.mixer.music.stop()
+        self.is_playing_midi = False
+        # 使用ttkbootstrap的内置Primary样式
+        self.midi_play_button.config(text="试听MIDI")
+        
+        # 重新启用其他播放按钮
+        if hasattr(self, 'current_file_path') and self.current_file_path:
+            self.play_button.config(state=NORMAL)
+            self.preview_button.config(state=NORMAL)
+    
+    def check_midi_playback(self):
+        """检查MIDI播放是否结束"""
+        if self.is_playing_midi:
+            if not pygame.mixer.music.get_busy():
+                # 播放已结束
+                self.stop_midi_playback()
+            else:
+                # 继续检查
+                self.root.after(1000, self.check_midi_playback)
+    
     def toggle_preview(self):
         """切换预览状态"""
         if not self.is_previewing:
+            # 如果正在播放MIDI，先停止
+            if hasattr(self, 'is_playing_midi') and self.is_playing_midi:
+                self.stop_midi_playback()
             self.start_preview()
         else:
             self.stop_preview()
@@ -768,6 +859,10 @@ class MainWindow:
         """停止预览"""
         self.is_previewing = False
         self.preview_button.config(text="预览")
+        
+        # 重新启用试听MIDI按钮
+        if hasattr(self, 'current_file_path') and self.current_file_path and hasattr(self, 'midi_play_button'):
+            self.midi_play_button.config(state=NORMAL)
     
     def update_progress(self):
         """更新进度显示"""
