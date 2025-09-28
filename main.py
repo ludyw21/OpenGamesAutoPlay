@@ -6,6 +6,7 @@ MIDI自动演奏程序 - 一个基于ttkbootstrap的MIDI文件播放器，支持
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'pages'))
 
 # 设置DPI感知，确保在高DPI显示器上正常显示
 if hasattr(os, 'name') and os.name == 'nt':
@@ -32,6 +33,7 @@ import pygame.mixer
 from midi_player import MidiPlayer
 from keyboard_mapping import CONTROL_KEYS
 import mido
+from pages.help_dialog import HelpDialog
 
 # 忽略废弃警告
 import warnings
@@ -93,8 +95,8 @@ class MainWindow:
             except:
                 pass
         
-        # 根据DPI缩放比例计算窗口大小，增加高度以容纳新的UI元素
-        base_width, base_height = 550, 600  # 增加高度
+        # 根据DPI缩放比例计算窗口大小，减少高度以消除底部多余空间
+        base_width, base_height = 550, 500  # 减少高度
         scaled_width = int(base_width * dpi_scale)
         scaled_height = int(base_height * dpi_scale)
         
@@ -411,32 +413,42 @@ class MainWindow:
                 state=DISABLED
             )
             self.midi_play_button.pack(side=LEFT, padx=5, expand=YES, fill=X)
+        
+            # 其他LabelFrame
+            other_frame = ttk.LabelFrame(right_frame, text="其他", padding=10)
+            other_frame.pack(fill=X, pady=5)
             
-            # 创建一个容器框架来并列显示使用说明和快捷键说明，放置在底部
-            bottom_container = ttk.Frame(right_frame)
-            bottom_container.pack(side=BOTTOM, fill=X, pady=5, anchor='s')
+            # 其他功能按钮布局
+            other_buttons_frame = ttk.Frame(other_frame)
+            other_buttons_frame.pack(fill=X, pady=5)
             
-            # 添加使用说明，确保底部对齐
-            info_frame = ttk.LabelFrame(bottom_container, text="使用说明", padding=10)
-            info_frame.pack(side=LEFT, fill=X, expand=True, padx=(0, 5), anchor='s')
+            # 事件簿按钮
+            self.event_button = ttk.Button(
+                other_buttons_frame, 
+                text="事件簿", 
+                command=self.show_event_book
+            )
+            self.event_button.pack(side=LEFT, padx=5, fill=X)
             
-            usage_text = "1. 使用管理员权限启动\n" + \
-                         "2. 选择MIDI文件和音轨\n" + \
-                         "3. 点击播放按钮开始演奏\n" + \
-                         "4. 支持36键模式"
+            # 设置按钮
+            self.settings_button = ttk.Button(
+                other_buttons_frame, 
+                text="设置", 
+                command=self.show_settings
+            )
+            self.settings_button.pack(side=LEFT, padx=5, fill=X)
             
-            usage_label = ttk.Label(info_frame, text=usage_text, justify=LEFT)
-            usage_label.pack(fill=X)
+            # 帮助按钮
+            self.help_button = ttk.Button(
+                other_buttons_frame, 
+                text="帮助", 
+                command=self.show_help
+            )
+            self.help_button.pack(side=LEFT, padx=5, fill=X)
             
-            # 添加快捷键说明，确保底部对齐
-            shortcut_frame = ttk.LabelFrame(bottom_container, text="快捷键说明", padding=10)
-            shortcut_frame.pack(side=LEFT, fill=X, expand=True, padx=(5, 0), anchor='s')
-            
-            shortcut_text = "Alt + 减号键(-) 播放/暂停\n" + \
-                            "Alt + 等号键(=) 停止播放"
-            
-            shortcut_label = ttk.Label(shortcut_frame, text=shortcut_text, justify=LEFT)
-            shortcut_label.pack(fill=X)
+            # 底部预留空间
+            bottom_space = ttk.Frame(right_frame)
+            bottom_space.pack(fill=X, pady=5)
             
         except Exception as e:
             print(f"设置UI界面时出错: {str(e)}")
@@ -447,6 +459,18 @@ class MainWindow:
         stay_on_top = self.stay_on_top_var.get()
         self.root.attributes('-topmost', stay_on_top)
         
+    def show_event_book(self):
+        """显示事件簿（暂未实现）"""
+        pass
+    
+    def show_settings(self):
+        """显示设置（暂未实现）"""
+        pass
+    
+    def show_help(self):
+        """显示帮助对话框"""
+        HelpDialog(self.root)
+    
     def setup_keyboard_hooks(self):
         """设置键盘快捷键"""
         try:
@@ -695,7 +719,7 @@ class MainWindow:
             
             # 解析MIDI文件 - 使用更安全的编码处理方式
             import mido
-            print(f"正在加载MIDI文件: {file_path}")
+            # print(f"正在加载MIDI文件: {file_path}")
             # 先尝试使用二进制模式打开，然后使用不同编码方案尝试解析
             try:
                 mid = mido.MidiFile(file_path, charset='utf-8')  # 优先尝试UTF-8
@@ -731,7 +755,7 @@ class MainWindow:
                 
                 # 使用专门的乱码修复方法处理音轨名称
                 fixed_name = self._fix_mojibake(original_name) if original_name else f"未命名"
-                print(f"音轨{i+1} - 原始名称: {original_name}, 修复后: {fixed_name}")
+                # print(f"音轨{i+1} - 原始名称: {original_name}, 修复后: {fixed_name}")
                 
                 # 构建显示名称，添加音轨标号
                 display_name = f"音轨{i+1}：{fixed_name} ({note_count}个音符)"
@@ -752,7 +776,7 @@ class MainWindow:
             
             # 保存MIDI文件路径
             self.current_file_path = file_path
-            print(f"成功加载MIDI文件，共找到{len(self.tracks_info)}个有效音轨")
+            # print(f"成功加载MIDI文件：{file_path}，共找到{len(self.tracks_info)}个有效音轨")
                 
             # 启用试听MIDI按钮
             if hasattr(self, 'midi_play_button'):
