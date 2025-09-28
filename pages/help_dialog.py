@@ -41,15 +41,7 @@ class HelpDialog:
         usage_label = ttk.Label(usage_frame, text=usage_text, justify=LEFT)
         usage_label.pack(fill=BOTH, expand=YES)
         
-        # 快捷键说明标签页
-        shortcut_frame = ttk.Frame(notebook, padding=10)
-        notebook.add(shortcut_frame, text="快捷键说明")
-        
-        shortcut_text = "Alt + 减号键(-) 播放/暂停\n" + \
-                        "Alt + 等号键(=) 停止播放"
-        
-        shortcut_label = ttk.Label(shortcut_frame, text=shortcut_text, justify=LEFT)
-        shortcut_label.pack(fill=BOTH, expand=YES)
+        # 快捷键说明标签页 - 已隐藏，使用设置对话框配置快捷键
         
         # 确定按钮
         button_frame = ttk.Frame(self.dialog)

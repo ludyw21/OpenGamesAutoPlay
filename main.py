@@ -34,6 +34,7 @@ from midi_player import MidiPlayer
 from keyboard_mapping import CONTROL_KEYS
 import mido
 from pages.help_dialog import HelpDialog
+from pages.settings_dialog import SettingsDialog
 
 # 忽略废弃警告
 import warnings
@@ -67,7 +68,13 @@ class Config:
     def get_default_config():
         return {
             'last_directory': '',
-            'stay_on_top': False
+            'stay_on_top': False,
+            'shortcuts': {
+                'START_PAUSE': 'alt+-',  # Alt + 减号键
+                'STOP': 'alt+=',         # Alt + 等号键
+                'PREV_SONG': 'alt+up',   # Alt + 上箭头键
+                'NEXT_SONG': 'alt+down'  # Alt + 下箭头键
+            }
         }
 
 def handle_error(func_name):
@@ -464,8 +471,8 @@ class MainWindow:
         pass
     
     def show_settings(self):
-        """显示设置（暂未实现）"""
-        pass
+        """显示设置对话框"""
+        SettingsDialog(self.root, self.config_manager)
     
     def show_help(self):
         """显示帮助对话框"""
@@ -474,19 +481,142 @@ class MainWindow:
     def setup_keyboard_hooks(self):
         """设置键盘快捷键"""
         try:
+            # 从keyboard_mapping.py导入默认的控制键配置
+            from keyboard_mapping import CONTROL_KEYS
+            
+            # 默认快捷键设置，使用keyboard_mapping中的配置
+            default_shortcuts = CONTROL_KEYS.copy()
+            
+            # 从配置中获取快捷键设置，如果没有则使用默认值
+            shortcuts = self.config.get('shortcuts', default_shortcuts.copy())
+            
+            # 标记是否需要更新配置
+            need_update_config = False
+            
+            # 预先验证所有快捷键的有效性
+            for action, shortcut in shortcuts.items():
+                if action in default_shortcuts:
+                    try:
+                        # 临时添加并立即移除来验证快捷键格式
+                        keyboard.add_hotkey(shortcut, lambda: None)
+                        keyboard.remove_hotkey(shortcut)
+                    except Exception as e:
+                        print(f"验证快捷键 {action}: {shortcut} 时出错: {str(e)}")
+                        need_update_config = True
+                        break
+            
+            # 如果发现任何无效的快捷键，将所有快捷键更新为默认值
+            if need_update_config:
+                print("发现无效的快捷键配置，将所有快捷键更新为默认值")
+                shortcuts = default_shortcuts.copy()
+            
+            # 逐个添加快捷键，允许单个快捷键失败而不影响其他快捷键
+            shortcuts_added = 0
+            
             # 播放/暂停
-            keyboard.add_hotkey(CONTROL_KEYS['START_PAUSE'], lambda: self.safe_key_handler(self.toggle_play), 
-                              suppress=True, trigger_on_release=True)
+            try:
+                keyboard.add_hotkey(shortcuts.get('START_PAUSE', default_shortcuts['START_PAUSE']), 
+                                  lambda: self.safe_key_handler(self.toggle_play),
+                                  suppress=True, trigger_on_release=True)
+                shortcuts_added += 1
+            except Exception as e:
+                print(f"设置播放/暂停快捷键时出错: {str(e)}")
+                print(f"将使用keyboard_mapping中的默认播放/暂停快捷键: {default_shortcuts['START_PAUSE']}")
+                # 更新配置中的错误值
+                shortcuts['START_PAUSE'] = default_shortcuts['START_PAUSE']
+                need_update_config = True
+                try:
+                    keyboard.add_hotkey(default_shortcuts['START_PAUSE'], 
+                                      lambda: self.safe_key_handler(self.toggle_play),
+                                      suppress=True, trigger_on_release=True)
+                    shortcuts_added += 1
+                except:
+                    pass
             
             # 停止
-            keyboard.add_hotkey(CONTROL_KEYS['STOP'], lambda: self.safe_key_handler(self.stop_playback),
-                              suppress=True, trigger_on_release=True)
+            try:
+                keyboard.add_hotkey(shortcuts.get('STOP', default_shortcuts['STOP']), 
+                                  lambda: self.safe_key_handler(self.stop_playback),
+                                  suppress=True, trigger_on_release=True)
+                shortcuts_added += 1
+            except Exception as e:
+                print(f"设置停止快捷键时出错: {str(e)}")
+                print(f"将使用keyboard_mapping中的默认停止快捷键: {default_shortcuts['STOP']}")
+                # 更新配置中的错误值
+                shortcuts['STOP'] = default_shortcuts['STOP']
+                need_update_config = True
+                try:
+                    keyboard.add_hotkey(default_shortcuts['STOP'], 
+                                      lambda: self.safe_key_handler(self.stop_playback),
+                                      suppress=True, trigger_on_release=True)
+                    shortcuts_added += 1
+                except:
+                    pass
             
-            print("键盘快捷键设置完成")
+            # 上一首
+            try:
+                keyboard.add_hotkey(shortcuts.get('PREV_SONG', default_shortcuts['PREV_SONG']), 
+                                  lambda: self.safe_key_handler(self.play_previous_song),
+                                  suppress=True, trigger_on_release=True)
+                shortcuts_added += 1
+            except Exception as e:
+                print(f"设置上一首快捷键时出错: {str(e)}")
+                print(f"将使用keyboard_mapping中的默认上一首快捷键: {default_shortcuts['PREV_SONG']}")
+                # 更新配置中的错误值
+                shortcuts['PREV_SONG'] = default_shortcuts['PREV_SONG']
+                need_update_config = True
+                try:
+                    keyboard.add_hotkey(default_shortcuts['PREV_SONG'], 
+                                      lambda: self.safe_key_handler(self.play_previous_song),
+                                      suppress=True, trigger_on_release=True)
+                    shortcuts_added += 1
+                except:
+                    pass
             
+            # 下一首
+            try:
+                keyboard.add_hotkey(shortcuts.get('NEXT_SONG', default_shortcuts['NEXT_SONG']), 
+                                  lambda: self.safe_key_handler(self.play_next_song),
+                                  suppress=True, trigger_on_release=True)
+                shortcuts_added += 1
+            except Exception as e:
+                print(f"设置下一首快捷键时出错: {str(e)}")
+                print(f"将使用keyboard_mapping中的默认下一首快捷键: {default_shortcuts['NEXT_SONG']}")
+                # 更新配置中的错误值
+                shortcuts['NEXT_SONG'] = default_shortcuts['NEXT_SONG']
+                need_update_config = True
+                try:
+                    keyboard.add_hotkey(default_shortcuts['NEXT_SONG'], 
+                                      lambda: self.safe_key_handler(self.play_next_song),
+                                      suppress=True, trigger_on_release=True)
+                    shortcuts_added += 1
+                except:
+                    pass
+            
+            # 如果检测到错误并更新了快捷键配置，则保存到config.json
+            if need_update_config:
+                print("检测到快捷键配置错误，已使用默认值更新config.json")
+                self.config['shortcuts'] = shortcuts
+                try:
+                    self.config_manager.save(self.config)
+                except Exception as e:
+                    print(f"保存配置时出错: {str(e)}")
+            
+            if shortcuts_added > 0:
+                print(f"键盘快捷键设置完成，成功添加了 {shortcuts_added} 个快捷键")
+            else:
+                print("警告：无法设置任何键盘快捷键，请检查系统权限和键盘库安装")
+                
         except Exception as e:
             print(f"设置键盘快捷键时出错: {str(e)}")
             messagebox.showerror("快捷键错误", f"设置快捷键时出错: {str(e)}")
+            # 尝试使用最基本的默认快捷键
+            try:
+                keyboard.add_hotkey('alt+1', lambda: self.safe_key_handler(self.toggle_play))
+                keyboard.add_hotkey('alt+2', lambda: self.safe_key_handler(self.stop_playback))
+                print("已设置基本默认快捷键")
+            except:
+                pass
     
     def safe_key_handler(self, func):
         """安全地处理键盘事件，添加防抖动和状态检查"""
@@ -545,6 +675,27 @@ class MainWindow:
             file_name = os.path.basename(file_path)
             self.song_list.insert('', END, values=[file_name], tags=(file_path,))
     
+    def disable_keyboard_hooks(self):
+        """暂时禁用所有键盘钩子，用于快捷键设置时避免冲突"""
+        try:
+            # 移除所有现有的键盘钩子
+            keyboard.unhook_all()
+            print("键盘钩子已暂时禁用")
+        except Exception as e:
+            print(f"禁用键盘钩子时出错: {str(e)}")
+            
+    def update_keyboard_hooks(self):
+        """更新键盘钩子"""
+        try:
+            # 移除所有现有的键盘钩子
+            keyboard.unhook_all()
+            # 重新设置键盘钩子
+            self.setup_keyboard_hooks()
+            print("键盘快捷键已更新")
+        except Exception as e:
+            print(f"更新键盘快捷键时出错: {str(e)}")
+            messagebox.showerror("快捷键错误", f"更新快捷键时出错: {str(e)}")
+            
     def filter_songs(self):
         """根据搜索文本过滤歌曲列表"""
         search_text = self.search_input.get().lower()
@@ -1188,6 +1339,69 @@ class MainWindow:
         # 重新启用试听MIDI按钮
         if hasattr(self, 'current_file_path') and self.current_file_path and hasattr(self, 'midi_play_button'):
             self.midi_play_button.config(state=NORMAL)
+            
+    def play_previous_song(self):
+        """播放上一首歌曲"""
+        if not self.midi_files:
+            return
+            
+        try:
+            # 找到当前文件在列表中的索引
+            current_index = -1
+            if hasattr(self, 'current_file_path') and self.current_file_path:
+                for i, file_path in enumerate(self.midi_files):
+                    if file_path == self.current_file_path:
+                        current_index = i
+                        break
+            
+            # 计算上一首的索引（循环播放）
+            if current_index > 0:
+                prev_index = current_index - 1
+            else:
+                prev_index = len(self.midi_files) - 1  # 最后一首
+            
+            # 加载上一首文件
+            next_file = self.midi_files[prev_index]
+            self._load_midi_tracks(next_file)
+            
+            # 如果正在播放，自动开始播放新文件
+            if hasattr(self.midi_player, 'playing') and self.midi_player.playing:
+                self.toggle_play()  # 先暂停当前播放
+                self.toggle_play()  # 再开始播放新文件
+                
+        except Exception as e:
+            print(f"播放上一首歌曲时出错: {str(e)}")
+            messagebox.showerror("播放错误", f"播放上一首歌曲时出错: {str(e)}")
+            
+    def play_next_song(self):
+        """播放下一首歌曲"""
+        if not self.midi_files:
+            return
+            
+        try:
+            # 找到当前文件在列表中的索引
+            current_index = -1
+            if hasattr(self, 'current_file_path') and self.current_file_path:
+                for i, file_path in enumerate(self.midi_files):
+                    if file_path == self.current_file_path:
+                        current_index = i
+                        break
+            
+            # 计算下一首的索引（循环播放）
+            next_index = (current_index + 1) % len(self.midi_files)
+            
+            # 加载下一首文件
+            next_file = self.midi_files[next_index]
+            self._load_midi_tracks(next_file)
+            
+            # 如果正在播放，自动开始播放新文件
+            if hasattr(self.midi_player, 'playing') and self.midi_player.playing:
+                self.toggle_play()  # 先暂停当前播放
+                self.toggle_play()  # 再开始播放新文件
+                
+        except Exception as e:
+            print(f"播放下一首歌曲时出错: {str(e)}")
+            messagebox.showerror("播放错误", f"播放下一首歌曲时出错: {str(e)}")
     
     def update_progress(self):
         """更新进度显示"""
