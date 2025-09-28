@@ -971,16 +971,39 @@ class MainWindow:
     
     def update_analysis_info(self):
         """更新音轨分析信息显示"""
-        # 模拟分析数据，实际功能后续实现
+        # 获取当前的移调和转位设置
         transpose = self.transpose_var.get()
         octave = self.octave_var.get()
-        total_notes = 1232 if self.selected_tracks else 0
         
-        # 根据选中的音轨数量设置不同的模拟数据
         if self.selected_tracks:
-            self.analysis_text = f"选中音轨分析（含升降调 音程转位） 总音符数 {total_notes}\n最高音: 82 a² 小字二组 未超限 超限数量: 0\n最低音: 23 B₂ 大字二组 超限 超限数量: 2"
+            # 获取选中的音轨名称列表
+            selected_track_names = []
+            total_notes = 0
+            
+            for info in self.tracks_info:
+                if info['track_index'] in self.selected_tracks:
+                    # 获取音轨名称（从tracks_list中获取）
+                    values = self.tracks_list.item(info['item_id'], "values")
+                    if values and len(values) > 1:
+                        # 提取音轨名称，如"音轨1"、"音轨2"等
+                        track_text = values[1]
+                        if "音轨" in track_text:
+                            # 提取音轨编号部分
+                            track_name = track_text.split("：")[0]
+                            selected_track_names.append(track_name)
+                    # 累计音符数
+                    total_notes += info['note_count']
+            
+            # 构建选中音轨的显示字符串
+            tracks_str = "、".join(selected_track_names)
+            
+            # 更新第一行文本
+            first_line = f"音轨{{{tracks_str}}}   移调:{transpose}  转位:{octave}  总音符:{total_notes}"
+            
+            # 保留后续行的内容
+            self.analysis_text = f"{first_line}\n最高音: 82 a² 小字二组 未超限 超限数量: 0\n最低音: 23 B₂ 大字二组 超限 超限数量: 2"
         else:
-            self.analysis_text = "选中音轨分析（含升降调 音程转位） 总音符数 0\n最高音: - 未检测\n最低音: - 未检测\n超限数量: 0"
+            self.analysis_text = "音轨{无选中}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测\n超限数量: 0"
         
         self.analysis_label.config(text=self.analysis_text)
     
