@@ -356,7 +356,7 @@ class MainWindow:
             analysis_frame.pack(fill=X, pady=5)
             
             # 分析数据内容
-            self.analysis_text = "选中音轨分析(含移调、音程转位) 总音符数 0\n最高音: - 未检测\n最低音: - 未检测\n超限数量: 0"
+            self.analysis_text = "选中音轨分析(含移调、音程转位) 总音符数 0\n最高音: - 未检测\n最低音: - 未检测"
             self.analysis_label = ttk.Label(analysis_frame, text=self.analysis_text, justify=LEFT)
             self.analysis_label.pack(fill=X, anchor=W)
             
@@ -1003,7 +1003,7 @@ class MainWindow:
             # 保留后续行的内容
             self.analysis_text = f"{first_line}\n最高音: 82 a² 小字二组 未超限 超限数量: 0\n最低音: 23 B₂ 大字二组 超限 超限数量: 2"
         else:
-            self.analysis_text = "音轨{无选中}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测\n超限数量: 0"
+            self.analysis_text = "音轨{无选中}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测"
         
         self.analysis_label.config(text=self.analysis_text)
     
