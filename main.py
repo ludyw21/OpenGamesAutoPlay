@@ -93,8 +93,8 @@ class MainWindow:
             except:
                 pass
         
-        # 根据DPI缩放比例计算窗口大小
-        base_width, base_height = 550, 480
+        # 根据DPI缩放比例计算窗口大小，增加高度以容纳新的UI元素
+        base_width, base_height = 550, 600  # 增加高度
         scaled_width = int(base_width * dpi_scale)
         scaled_height = int(base_height * dpi_scale)
         
@@ -137,6 +137,9 @@ class MainWindow:
         self.current_index = -1
         self.midi_files = []
         self.tracks_info = []  # 初始化音轨信息列表
+        self.selected_tracks = set()  # 存储选中的音轨索引
+        self.transpose_var = tk.IntVar(value=0)  # 升降调（半音）
+        self.octave_var = tk.IntVar(value=0)  # 整体转位（八度）
         
         try:
             self.midi_player = MidiPlayer()
@@ -285,31 +288,88 @@ class MainWindow:
             right_frame = ttk.LabelFrame(main_frame, text="播放控制", padding=10)
             right_frame.grid(row=0, column=1, sticky=NSEW, padx=5, pady=5)  # 全方向拉伸，使其自适应
             
-            # 创建音轨详情区域
-            tracks_label = ttk.Label(right_frame, text="音轨详情", font=('Arial', 12, 'bold'))
-            tracks_label.pack(anchor=W, pady=5)
+            # 创建音轨详情LabelFrame
+            tracks_frame = ttk.LabelFrame(right_frame, text="音轨详情", padding=10)
+            tracks_frame.pack(fill=X, pady=5)
             
             # 当前歌曲名称标签 - 设置为不换行，超出部分不显示，占满整行
-            song_label_frame = ttk.Frame(right_frame)
+            song_label_frame = ttk.Frame(tracks_frame)
             song_label_frame.pack(fill=X, pady=2)
             
             # 设置文本左对齐，wraplength=0确保不换行，超出部分会自动截断
             self.current_song_label = ttk.Label(song_label_frame, text="当前歌曲：未选择", anchor=W, wraplength=0, justify=LEFT)
             self.current_song_label.pack(fill=X, expand=True)
             
-            # 创建音轨列表 - 自适应右侧宽度
-            self.tracks_list = ttk.Treeview(right_frame, columns=["track"], show="headings")
+            # 创建音轨列表 - 自适应右侧宽度，使用自定义渲染来显示复选框
+            self.tracks_list = ttk.Treeview(tracks_frame, columns=["checkbox", "track"], show="headings", height=6)
+            self.tracks_list.heading("checkbox", text="")
             self.tracks_list.heading("track", text="音轨列表")
+            self.tracks_list.column("checkbox", width=30, stretch=NO, anchor='center')
             self.tracks_list.column("track", stretch=YES)  # 允许列拉伸以适应右侧宽度
             self.tracks_list.pack(fill=X, pady=5)
-            self.tracks_list.bind("<<TreeviewSelect>>", lambda e: self.track_selected())
+            
+            # 设置Treeview样式
+            style = ttk.Style()
+            # 注意：我们需要禁用默认的选择行为，完全由我们自己控制
+            
+            # 绑定点击事件以处理复选框和整行选中
+            self.tracks_list.bind("<Button-1>", self.on_track_click)
+            self.tracks_list.bind("<<TreeviewSelect>>", lambda e: None)  # 禁用默认的选择事件处理
+            self.tracks_list.bind("<Motion>", lambda e: None)  # 禁用鼠标移动导致的高亮变化
+            
+            # 添加新的设置区域：移调和转位
+            settings_frame = ttk.LabelFrame(right_frame, text="转音设置", padding=10)
+            settings_frame.pack(fill=X, pady=5)
+            
+            # 移调设置
+            transpose_frame = ttk.Frame(settings_frame)
+            transpose_frame.pack(fill=X, pady=5)
+            
+            ttk.Label(transpose_frame, text="移调(半音):").pack(side=LEFT, padx=5)
+            
+            # 修改为左右布局的按钮
+            transpose_control_frame = ttk.Frame(transpose_frame)
+            transpose_control_frame.pack(side=LEFT, padx=5)
+            
+            ttk.Button(transpose_control_frame, text="-", command=lambda: self.adjust_value(self.transpose_var, -1), width=2).pack(side=LEFT)
+            self.transpose_entry = ttk.Entry(transpose_control_frame, textvariable=self.transpose_var, width=5, justify='center')
+            self.transpose_entry.pack(side=LEFT)
+            ttk.Button(transpose_control_frame, text="+", command=lambda: self.adjust_value(self.transpose_var, 1), width=2).pack(side=LEFT)
+            
+            # 整体转位设置
+            octave_frame = ttk.Frame(transpose_frame)
+            octave_frame.pack(side=LEFT, padx=15)
+            
+            ttk.Label(octave_frame, text="转位(八度):").pack(side=LEFT, padx=5)
+            
+            # 修改为左右布局的按钮
+            octave_control_frame = ttk.Frame(octave_frame)
+            octave_control_frame.pack(side=LEFT, padx=5)
+            
+            ttk.Button(octave_control_frame, text="-", command=lambda: self.adjust_value(self.octave_var, -1), width=2).pack(side=LEFT)
+            self.octave_entry = ttk.Entry(octave_control_frame, textvariable=self.octave_var, width=5, justify='center')
+            self.octave_entry.pack(side=LEFT)
+            ttk.Button(octave_control_frame, text="+", command=lambda: self.adjust_value(self.octave_var, 1), width=2).pack(side=LEFT)
+            
+            # MIDI分析数据显示区域
+            analysis_frame = ttk.LabelFrame(right_frame, text="音轨分析", padding=10)
+            analysis_frame.pack(fill=X, pady=5)
+            
+            # 分析数据内容
+            self.analysis_text = "选中音轨分析(含移调、音程转位) 总音符数 0\n最高音: - 未检测\n最低音: - 未检测\n超限数量: 0"
+            self.analysis_label = ttk.Label(analysis_frame, text=self.analysis_text, justify=LEFT)
+            self.analysis_label.pack(fill=X, anchor=W)
+            
+            # 操作区域LabelFrame
+            operation_frame = ttk.LabelFrame(right_frame, text="操作", padding=10)
+            operation_frame.pack(fill=X, pady=5)
             
             # 时间显示
-            self.time_label = ttk.Label(right_frame, text="剩余时间: 00:00", anchor=CENTER)
+            self.time_label = ttk.Label(operation_frame, text="剩余时间: 00:00", anchor=CENTER)
             self.time_label.pack(fill=X, pady=5)
             
             # 控制按钮布局
-            control_frame = ttk.Frame(right_frame)
+            control_frame = ttk.Frame(operation_frame)
             control_frame.pack(fill=X, pady=10)
             
             # 播放/暂停按钮
@@ -630,6 +690,9 @@ class MainWindow:
             for item in self.tracks_list.get_children():
                 self.tracks_list.delete(item)
             
+            # 清空选中的音轨集合
+            self.selected_tracks.clear()
+            
             # 解析MIDI文件 - 使用更安全的编码处理方式
             import mido
             print(f"正在加载MIDI文件: {file_path}")
@@ -644,6 +707,11 @@ class MainWindow:
             
             # 初始化音轨信息列表
             self.tracks_info = []
+            
+            # 先添加"全部音轨"项作为全选/反选控制
+            self.all_tracks_item = self.tracks_list.insert('', END, values=["✓", "全部音轨"], tags="all_tracks")
+            # 默认全选时给"全部音轨"项也添加高亮
+            self.tracks_list.selection_add(self.all_tracks_item)
             
             # 添加音轨信息
             for i, track in enumerate(mid.tracks):
@@ -668,14 +736,19 @@ class MainWindow:
                 # 构建显示名称，添加音轨标号
                 display_name = f"音轨{i+1}：{fixed_name} ({note_count}个音符)"
                 
-                # 添加到Treeview
-                self.tracks_list.insert('', END, values=[display_name], tags=(i,))
+                # 添加到Treeview，默认选中（显示✓）
+                checkbox = "✓"  # 默认选中
+                item = self.tracks_list.insert('', END, values=[checkbox, display_name], tags=(i,))
                 
                 # 存储音轨信息
-                self.tracks_info.append({"track_index": i, "note_count": note_count})
+                self.tracks_info.append({"track_index": i, "note_count": note_count, "item_id": item})
+                
+                # 默认全选并选中行（高亮）
+                self.selected_tracks.add(i)
+                self.tracks_list.selection_add(item)
             
-            # 绑定选择事件
-            self.tracks_list.bind('<<TreeviewSelect>>', self.track_selected)
+            # 更新分析信息显示
+            self.update_analysis_info()
             
             # 保存MIDI文件路径
             self.current_file_path = file_path
@@ -685,26 +758,231 @@ class MainWindow:
             if hasattr(self, 'midi_play_button'):
                 self.midi_play_button.config(state=NORMAL)
             
+            # 初始化按钮状态：播放按钮亮，暂停按钮灰
+            if hasattr(self, 'play_button'):
+                self.play_button.config(state=NORMAL)
+            if hasattr(self, 'stop_button'):
+                self.stop_button.config(state=DISABLED)
+            
         except Exception as e:
             print(f"加载MIDI文件时出错: {str(e)}")
             messagebox.showerror("MIDI错误", f"加载MIDI文件时出错: {str(e)}")
     
     def track_selected(self, event=None):
         """选择音轨时的处理"""
-        selected_items = self.tracks_list.selection()
-        if not selected_items:
+        # 启用或禁用播放按钮 - 有选中音轨时亮
+        if hasattr(self, 'play_button'):
+            self.play_button.config(state=NORMAL if self.selected_tracks else DISABLED)
+        
+        # 启用或禁用停止按钮 - 默认为灰（只有播放时才亮）
+        if hasattr(self, 'stop_button'):
+            # 检查是否正在播放
+            is_playing = hasattr(self, 'is_playing') and self.is_playing
+            self.stop_button.config(state=NORMAL if is_playing else DISABLED)
+        
+        # 启用或禁用预览按钮
+        if hasattr(self, 'preview_button'):
+            self.preview_button.config(state=NORMAL if self.selected_tracks else DISABLED)
+    
+    def update_tracks_ui(self, all_tracks_selected, track_states):
+        """更新音轨UI状态：复选框和高亮"""
+        # 先清除所有选择，然后重新设置
+        self.tracks_list.selection_set([])
+        
+        # 更新"全部音轨"项
+        all_values = list(self.tracks_list.item(self.all_tracks_item, "values"))
+        all_values[0] = "✓" if all_tracks_selected else "□"
+        self.tracks_list.item(self.all_tracks_item, values=all_values)
+        
+        # 设置"全部音轨"项的高亮状态
+        if all_tracks_selected:
+            self.tracks_list.selection_add(self.all_tracks_item)
+        
+        # 更新所有子音轨
+        for info in self.tracks_info:
+            track_index = info['track_index']
+            item_id = info['item_id']
+            is_selected = track_states.get(track_index, False)
+            
+            # 更新复选框状态
+            values = list(self.tracks_list.item(item_id, "values"))
+            values[0] = "✓" if is_selected else "□"
+            self.tracks_list.item(item_id, values=values)
+            
+            # 更新高亮状态
+            if is_selected:
+                self.tracks_list.selection_add(item_id)
+    
+    def on_track_click(self, event):
+        """处理音轨列表的点击事件，实现复选框和整行选中功能"""
+        # # 打印点击前的状态
+        # print("===== 点击前状态 =====")
+        # self._print_track_states()
+        
+        region = self.tracks_list.identify_region(event.x, event.y)
+        item = self.tracks_list.identify_row(event.y)
+        
+        # 如果点击了无效项，直接返回
+        if not item:
             return
+            
+        # 获取标签
+        tags = self.tracks_list.item(item, "tags")
         
-        # 获取选中的音轨索引
-        item = selected_items[0]
-        track_index = int(self.tracks_list.item(item, "tags")[0])
+        # 处理任何行点击，不仅仅是复选框列
+        if region == "cell" or region == "row":
+            # 阻止事件传播，防止默认的选择行为
+            event.widget.focus_set()
+            
+            # 检查是否点击的是"全部音轨"项
+            if tags == "all_tracks" or (isinstance(tags, tuple) and "all_tracks" in tags):
+                # 获取当前全部音轨状态
+                all_values = list(self.tracks_list.item(self.all_tracks_item, "values"))
+                current_all_selected = all_values[0] == "✓"
+                
+                # 切换全部音轨状态
+                new_all_selected = not current_all_selected
+                
+                # 更新所有子音轨状态
+                if new_all_selected:
+                    self.selected_tracks = set(info['track_index'] for info in self.tracks_info)
+                else:
+                    self.selected_tracks.clear()
+                
+                # 创建音轨状态字典
+                track_states = {}
+                for info in self.tracks_info:
+                    track_states[info['track_index']] = new_all_selected
+                
+                # 更新UI
+                self.update_tracks_ui(new_all_selected, track_states)
+            else:
+                # 获取音轨索引
+                if isinstance(tags, tuple) and tags:
+                    track_index = int(tags[0])
+                    
+                    # 获取当前音轨状态
+                    current_selected = track_index in self.selected_tracks
+                    
+                    # 切换音轨状态
+                    new_selected = not current_selected
+                    
+                    # 更新selected_tracks集合
+                    if new_selected:
+                        self.selected_tracks.add(track_index)
+                    else:
+                        self.selected_tracks.remove(track_index)
+                    
+                    # 检查是否所有子音轨都被选中
+                    all_selected = len(self.selected_tracks) == len(self.tracks_info)
+                    
+                    # 创建音轨状态字典
+                    track_states = {}
+                    for info in self.tracks_info:
+                        track_states[info['track_index']] = info['track_index'] in self.selected_tracks
+                    
+                    # 更新UI
+                    self.update_tracks_ui(all_selected, track_states)
         
-        # 设置选中的音轨
-        self.midi_player.selected_track = track_index
+        # # 打印点击后的状态
+        # print("===== 点击后状态 =====")
+        # self._print_track_states()
         
-        # 启用播放和停止按钮
-        self.play_button.config(state=NORMAL)
-        self.stop_button.config(state=NORMAL)
+        # 更新分析信息和按钮状态
+        self.update_analysis_info()
+        self.track_selected()
+        
+        # 确保返回'break'以阻止默认行为
+        return 'break'
+        
+    def _print_track_states(self):
+        # 打印所有音轨的状态
+        for item in self.tracks_list.get_children():
+            # 获取项目值（包括复选框状态）
+            values = self.tracks_list.item(item, "values")
+            checked = values[0] if values else "-"
+            # 获取项目文本
+            text = values[1] if len(values) > 1 else ""
+            # 检查是否选中
+            is_selected = item in self.tracks_list.selection()
+            # 获取音轨索引
+            tags = self.tracks_list.item(item, "tags")
+            track_index = tags[0] if isinstance(tags, tuple) and tags else "N/A"
+            print(f"项目: {item}, 索引: {track_index}, 文本: {text}, 复选框: {checked}, 选中状态: {is_selected}")
+        # 打印选中的音轨集合
+        print(f"选中的音轨集合: {self.selected_tracks}")
+        print(f"全部音轨项ID: {self.all_tracks_item}")
+    
+    def toggle_select_all(self):
+        """处理全选/反选功能"""
+        # 打印操作前状态
+        print("===== 切换全选前状态 =====")
+        self._print_track_states()
+        
+        # 检查"全部音轨"项的当前状态
+        all_values = list(self.tracks_list.item(self.all_tracks_item, "values"))
+        current_status = all_values[0] == "✓"
+        
+        # 如果全部已选中，则取消选中所有音轨；否则选中所有音轨
+        if current_status:
+            # 取消选中所有音轨
+            self.selected_tracks.clear()
+            # 更新UI，移除所有复选框并取消行高亮
+            for info in self.tracks_info:
+                values = list(self.tracks_list.item(info['item_id'], "values"))
+                values[0] = "□"  # 使用明确的未选中标记
+                self.tracks_list.item(info['item_id'], values=values)
+                self.tracks_list.selection_remove(info['item_id'])
+            # 更新"全部音轨"项
+            all_values[0] = "□"  # 使用明确的未选中标记
+            self.tracks_list.item(self.all_tracks_item, values=all_values)
+            # 取消"全部音轨"项的高亮
+            self.tracks_list.selection_remove(self.all_tracks_item)
+        else:
+            # 选中所有音轨
+            self.selected_tracks = set(info['track_index'] for info in self.tracks_info)
+            # 更新UI，添加所有复选框并添加行高亮
+            for info in self.tracks_info:
+                values = list(self.tracks_list.item(info['item_id'], "values"))
+                values[0] = "✓"
+                self.tracks_list.item(info['item_id'], values=values)
+                self.tracks_list.selection_add(info['item_id'])
+            # 更新"全部音轨"项
+            all_values[0] = "✓"
+            self.tracks_list.item(self.all_tracks_item, values=all_values)
+            # 添加"全部音轨"项的高亮
+            self.tracks_list.selection_add(self.all_tracks_item)
+        
+        # 更新分析信息
+        self.update_analysis_info()
+        # 调用track_selected更新按钮状态
+        self.track_selected()
+        
+        # 打印操作后状态
+        print("===== 切换全选后状态 =====")
+        self._print_track_states()
+        print("====================\n")
+    
+    def adjust_value(self, var, delta):
+        """调整数值变量"""
+        var.set(var.get() + delta)
+        # 更新分析信息
+        self.update_analysis_info()
+    
+    def update_analysis_info(self):
+        """更新音轨分析信息显示"""
+        # 模拟分析数据，实际功能后续实现
+        transpose = self.transpose_var.get()
+        octave = self.octave_var.get()
+        total_notes = 1232 if self.selected_tracks else 0
+        
+        # 根据选中的音轨数量设置不同的模拟数据
+        if self.selected_tracks:
+            self.analysis_text = f"选中音轨分析（含升降调 音程转位） 总音符数 {total_notes}\n最高音: 82 a² 小字二组 未超限 超限数量: 0\n最低音: 23 B₂ 大字二组 超限 超限数量: 2"
+        else:
+            self.analysis_text = "选中音轨分析（含升降调 音程转位） 总音符数 0\n最高音: - 未检测\n最低音: - 未检测\n超限数量: 0"
+        
+        self.analysis_label.config(text=self.analysis_text)
     
     def toggle_play(self):
         """切换播放/暂停状态"""
