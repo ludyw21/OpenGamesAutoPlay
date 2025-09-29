@@ -8,6 +8,7 @@ import csv
 from datetime import datetime
 # 导入音符分组信息
 from groups import group_for_note
+from midi_analyzer import MidiAnalyzer
 
 class EventTableDialog:
     def __init__(self, main_window):
@@ -117,9 +118,18 @@ class EventTableDialog:
         # 获取当前事件数据
         events = self.get_current_events()
         
-        # 计算超限音符数量
-        out_of_range_count = len([e for e in events if self.is_out_of_range(e)])
-        self.out_of_range_count_var.set(f"超限音符数量：{out_of_range_count}")
+        # 尝试从main_window获取分析结果，如果有的话
+        total_over_limit_count = 0
+        if hasattr(self.main_window, 'current_analysis_result') and self.main_window.current_analysis_result:
+            total_over_limit_count = self.main_window.current_analysis_result.get('total_over_limit_count', 0)
+        else:
+            # 否则手动计算超限音符数量（只计算note_on事件）
+            note_on_events = [e for e in events if e.get('type') == 'note_on']
+            out_of_range_note_ons = [e for e in note_on_events if self.is_out_of_range(e)]
+            total_over_limit_count = len(out_of_range_note_ons)
+        
+        # 更新超限音符数量显示
+        self.out_of_range_count_var.set(f"超限音符数量：{total_over_limit_count}")
         
         # 根据显示设置筛选事件
         if self.show_only_out_of_range_var.get():
@@ -201,9 +211,17 @@ class EventTableDialog:
     
     def is_out_of_range(self, event):
         """判断音符是否超限"""
-        # 这里应该根据应用程序的规则判断
-        # 暂时返回False
-        return False
+        # 首先检查事件中是否已经有is_over_limit标记
+        if 'is_over_limit' in event:
+            return event['is_over_limit']
+        
+        # 如果没有标记，则使用MidiAnalyzer的配置来判断
+        try:
+            min_note, max_note = MidiAnalyzer.get_note_limits()
+            note = event.get('note', 0)
+            return note < min_note or note > max_note
+        except:
+            return False
     
     def toggle_display(self):
         """切换显示模式"""

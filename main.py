@@ -35,6 +35,7 @@ from keyboard_mapping import CONTROL_KEYS
 import mido
 from pages.help_dialog import HelpDialog
 from pages.settings_dialog import SettingsDialog
+from midi_analyzer import MidiAnalyzer
 
 # 忽略废弃警告
 import warnings
@@ -472,84 +473,20 @@ class MainWindow:
         # 如果有当前文件和选中的音轨，生成事件数据
         if hasattr(self, 'current_file_path') and self.current_file_path and self.selected_tracks:
             try:
-                import mido
-                from groups import get_note_name, group_for_note
+                # 使用MidiAnalyzer来生成事件数据，这样可以确保事件数据包含超限标记
+                events, analysis_result = MidiAnalyzer.analyze_midi_file(self.current_file_path, self.selected_tracks)
                 
-                # 清空当前事件数据
-                self.current_events = []
-                note_starts = {}
+                # 更新当前事件数据和分析结果
+                self.current_events = events
+                self.current_analysis_result = analysis_result
                 
-                # 加载MIDI文件
-                mid = mido.MidiFile(self.current_file_path)
-                ppqn = mid.ticks_per_beat
-                
-                # 遍历选中的音轨
-                for track_idx in self.selected_tracks:
-                    if 0 <= track_idx < len(mid.tracks):
-                        track = mid.tracks[track_idx]
-                        track_time = 0.0
-                        
-                        # 遍历音轨中的所有消息
-                        for msg in track:
-                            # 累加时间（转换为秒）
-                            track_time += msg.time / ppqn * 4
-                            
-                            # 处理音符开始事件
-                            if msg.type == 'note_on' and msg.velocity > 0:
-                                note_key = (msg.channel, msg.note)
-                                note_starts[note_key] = {
-                                    'time': track_time,
-                                    'track': track_idx,
-                                    'velocity': msg.velocity
-                                }
-                                
-                                # 添加note_on事件
-                                self.current_events.append({
-                                    'time': track_time,
-                                    'type': 'note_on',
-                                    'note': msg.note,
-                                    'channel': msg.channel,
-                                    'group': group_for_note(msg.note),
-                                    'track': track_idx
-                                })
-                            
-                            # 处理音符结束事件
-                            elif (msg.type == 'note_off') or (msg.type == 'note_on' and msg.velocity == 0):
-                                note_key = (msg.channel, msg.note)
-                                if note_key in note_starts:
-                                    # 计算音符持续时间
-                                    start_time = note_starts[note_key]['time']
-                                    duration = track_time - start_time
-                                    
-                                    # 更新对应的note_on事件，添加持续时间和结束时间
-                                    for event in self.current_events:
-                                        if (event['type'] == 'note_on' and 
-                                            event['channel'] == msg.channel and 
-                                            event['note'] == msg.note and 
-                                            event['track'] == track_idx and
-                                            abs(event['time'] - start_time) < 0.01):
-                                            event['duration'] = duration
-                                            event['end'] = track_time
-                                            break
-                                
-                                # 添加note_off事件
-                                self.current_events.append({
-                                    'time': track_time,
-                                    'type': 'note_off',
-                                    'note': msg.note,
-                                    'channel': msg.channel,
-                                    'group': group_for_note(msg.note),
-                                    'track': track_idx
-                                })
-                
-                # 按时间排序所有事件
-                self.current_events.sort(key=lambda x: x['time'])
                 print(f"已生成事件数据：{len(self.current_events)}个事件，{len(self.current_events)/2}个音符。")
                 
             except Exception as e:
                 print(f"生成事件数据时出错: {str(e)}")
                 # 如果出错，使用空列表
                 self.current_events = []
+                self.current_analysis_result = None
     
     def show_event_table(self):
         """显示事件表，直接使用预生成的事件数据"""
@@ -1014,15 +951,17 @@ class MainWindow:
                 self.selected_tracks.add(i)
                 self.tracks_list.selection_add(item)
             
-            # 更新分析信息显示
-            self.update_analysis_info()
-            
             # 保存MIDI文件路径
             self.current_file_path = file_path
+            # 重置当前分析结果，避免使用旧的分析结果
+            self.current_analysis_result = None
             # print(f"成功加载MIDI文件：{file_path}，共找到{len(self.tracks_info)}个有效音轨")
             
             # 音轨已默认全选，立即生成事件数据
             self.update_event_data()
+            
+            # 更新分析信息显示
+            self.update_analysis_info()
                 
             # 启用试听MIDI按钮
             if hasattr(self, 'midi_play_button'):
@@ -1248,7 +1187,7 @@ class MainWindow:
         transpose = self.transpose_var.get()
         octave = self.octave_var.get()
         
-        if self.selected_tracks:
+        if self.selected_tracks and hasattr(self, 'current_file_path') and self.current_file_path:
             # 获取选中的音轨名称列表
             selected_track_names = []
             total_notes = 0
@@ -1273,11 +1212,46 @@ class MainWindow:
             # 更新第一行文本
             first_line = f"音轨{{{tracks_str}}}   移调:{transpose}  转位:{octave}  总音符:{total_notes}"
             
-            # 保留后续行的内容
-            self.analysis_text = f"{first_line}\n最高音: 82 a² 小字二组 未超限 超限数量: 0\n最低音: 23 B₂ 大字二组 超限 超限数量: 2"
+            # 首先尝试使用已有的分析结果
+            if hasattr(self, 'current_analysis_result') and self.current_analysis_result:
+                analysis_result = self.current_analysis_result
+            else:
+                # 如果没有已有的分析结果，则分析MIDI文件
+                try:
+                    events, analysis_result = MidiAnalyzer.analyze_midi_file(self.current_file_path, self.selected_tracks)
+                    
+                    # 更新当前事件数据和分析结果
+                    self.current_events = events
+                    self.current_analysis_result = analysis_result
+                except Exception as e:
+                    print(f"分析MIDI文件时出错: {str(e)}")
+                    self.analysis_text = f"{first_line}\n最高音: - 分析失败\n最低音: - 分析失败"
+                    self.current_analysis_result = None
+                    # 立即更新UI并返回
+                    self.analysis_label.config(text=self.analysis_text)
+                    return
+            
+            # 构建最高音和最低音的显示文本
+            if analysis_result['max_note'] is not None:
+                max_note_text = f"最高音: {analysis_result['max_note_name']}({analysis_result['max_note']})  {analysis_result['max_note_group']}  "
+                max_note_text += "超限" if analysis_result['is_max_over_limit'] else "未超限"
+                max_note_text += f"  超限数量: {analysis_result['over_max_count']}"
+            else:
+                max_note_text = "最高音: - 未检测"
+            
+            if analysis_result['min_note'] is not None:
+                min_note_text = f"最低音: {analysis_result['min_note_name']}({analysis_result['min_note']})  {analysis_result['min_note_group']}  "
+                min_note_text += "超限" if analysis_result['is_min_over_limit'] else "未超限"
+                min_note_text += f"  超限数量: {analysis_result['under_min_count']}"
+            else:
+                min_note_text = "最低音: - 未检测"
+            
+            self.analysis_text = f"{first_line}\n{max_note_text}\n{min_note_text}"
         else:
             self.analysis_text = "音轨{无选中}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测"
+            self.current_analysis_result = None
         
+        # 确保UI更新
         self.analysis_label.config(text=self.analysis_text)
     
     def toggle_play(self):
