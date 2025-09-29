@@ -148,6 +148,7 @@ class MainWindow:
         self.tracks_info = []  # 初始化音轨信息列表
         self.selected_tracks = set()  # 存储选中的音轨索引
         self.transpose_var = tk.IntVar(value=0)  # 升降调（半音）
+        self.current_events = []  # 存储事件表数据
         self.octave_var = tk.IntVar(value=0)  # 整体转位（八度）
         
         try:
@@ -466,9 +467,100 @@ class MainWindow:
         stay_on_top = self.stay_on_top_var.get()
         self.root.attributes('-topmost', stay_on_top)
         
+    def update_event_data(self):
+        """根据选中音轨预生成事件数据"""
+        # 如果有当前文件和选中的音轨，生成事件数据
+        if hasattr(self, 'current_file_path') and self.current_file_path and self.selected_tracks:
+            try:
+                import mido
+                from groups import get_note_name, group_for_note
+                
+                # 清空当前事件数据
+                self.current_events = []
+                note_starts = {}
+                
+                # 加载MIDI文件
+                mid = mido.MidiFile(self.current_file_path)
+                ppqn = mid.ticks_per_beat
+                
+                # 遍历选中的音轨
+                for track_idx in self.selected_tracks:
+                    if 0 <= track_idx < len(mid.tracks):
+                        track = mid.tracks[track_idx]
+                        track_time = 0.0
+                        
+                        # 遍历音轨中的所有消息
+                        for msg in track:
+                            # 累加时间（转换为秒）
+                            track_time += msg.time / ppqn * 4
+                            
+                            # 处理音符开始事件
+                            if msg.type == 'note_on' and msg.velocity > 0:
+                                note_key = (msg.channel, msg.note)
+                                note_starts[note_key] = {
+                                    'time': track_time,
+                                    'track': track_idx,
+                                    'velocity': msg.velocity
+                                }
+                                
+                                # 添加note_on事件
+                                self.current_events.append({
+                                    'time': track_time,
+                                    'type': 'note_on',
+                                    'note': msg.note,
+                                    'channel': msg.channel,
+                                    'group': group_for_note(msg.note),
+                                    'track': track_idx
+                                })
+                            
+                            # 处理音符结束事件
+                            elif (msg.type == 'note_off') or (msg.type == 'note_on' and msg.velocity == 0):
+                                note_key = (msg.channel, msg.note)
+                                if note_key in note_starts:
+                                    # 计算音符持续时间
+                                    start_time = note_starts[note_key]['time']
+                                    duration = track_time - start_time
+                                    
+                                    # 更新对应的note_on事件，添加持续时间和结束时间
+                                    for event in self.current_events:
+                                        if (event['type'] == 'note_on' and 
+                                            event['channel'] == msg.channel and 
+                                            event['note'] == msg.note and 
+                                            event['track'] == track_idx and
+                                            abs(event['time'] - start_time) < 0.01):
+                                            event['duration'] = duration
+                                            event['end'] = track_time
+                                            break
+                                
+                                # 添加note_off事件
+                                self.current_events.append({
+                                    'time': track_time,
+                                    'type': 'note_off',
+                                    'note': msg.note,
+                                    'channel': msg.channel,
+                                    'group': group_for_note(msg.note),
+                                    'track': track_idx
+                                })
+                
+                # 按时间排序所有事件
+                self.current_events.sort(key=lambda x: x['time'])
+                print(f"已生成事件数据：{len(self.current_events)}个事件，{len(self.current_events)/2}个音符。")
+                
+            except Exception as e:
+                print(f"生成事件数据时出错: {str(e)}")
+                # 如果出错，使用空列表
+                self.current_events = []
+    
     def show_event_table(self):
-        """显示事件表（暂未实现）"""
-        pass
+        """显示事件表，直接使用预生成的事件数据"""
+        from pages.event_table_dialog import EventTableDialog
+        
+        # 确保有事件数据（如果没有则临时生成）
+        if not hasattr(self, 'current_events') or not self.current_events:
+            self.update_event_data()
+        
+        # 传递MainWindow实例，而不仅仅是root
+        EventTableDialog(self)
     
     def show_settings(self):
         """显示设置对话框"""
@@ -928,6 +1020,9 @@ class MainWindow:
             # 保存MIDI文件路径
             self.current_file_path = file_path
             # print(f"成功加载MIDI文件：{file_path}，共找到{len(self.tracks_info)}个有效音轨")
+            
+            # 音轨已默认全选，立即生成事件数据
+            self.update_event_data()
                 
             # 启用试听MIDI按钮
             if hasattr(self, 'midi_play_button'):
@@ -1066,6 +1161,9 @@ class MainWindow:
         # 更新分析信息和按钮状态
         self.update_analysis_info()
         self.track_selected()
+        
+        # 更新事件数据（音轨选择变动时预生成事件）
+        self.update_event_data()
         
         # 确保返回'break'以阻止默认行为
         return 'break'

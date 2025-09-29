@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import ttkbootstrap as ttkb
 from ttkbootstrap.constants import *
+import os
 
 class HelpDialog:
     def __init__(self, parent):
@@ -12,12 +13,23 @@ class HelpDialog:
         self.dialog.transient(parent)  # 设置为主窗口的子窗口
         self.dialog.grab_set()  # 模态窗口
         
-        # 设置窗口大小和位置
-        dialog_width = 400
-        dialog_height = 300
+        # 获取DPI缩放比例
+        dpi_scale = 1.0
+        if hasattr(os, 'name') and os.name == 'nt':
+            try:
+                import ctypes
+                dpi_scale = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
+            except:
+                pass
+        
+        # 根据DPI缩放比例计算窗口大小，减少高度以消除底部多余空间
+        base_width, base_height = 400, 300  # 减少高度
+        dialog_width = int(base_width * dpi_scale)
+        dialog_height = int(base_height * dpi_scale)
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_width = parent.winfo_width()
+        
         parent_height = parent.winfo_height()
         
         x = parent_x + (parent_width - dialog_width) // 2
