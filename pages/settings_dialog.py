@@ -3,13 +3,13 @@ from tkinter import ttk, messagebox
 import ttkbootstrap as ttkb
 import ctypes
 import platform
-
-# 设置DPI感知，确保在高DPI显示器上显示正常
-ctypes.windll.shcore.SetProcessDpiAwareness(1)
 from ttkbootstrap.constants import *
 import json
 import os
 import keyboard
+
+# 设置DPI感知，确保在高DPI显示器上显示正常
+ctypes.windll.shcore.SetProcessDpiAwareness(1)
 
 class SettingsDialog:
     def __init__(self, parent, config_manager):
@@ -20,9 +20,21 @@ class SettingsDialog:
         self.dialog.transient(parent)  # 设置为主窗口的子窗口
         self.dialog.grab_set()  # 模态窗口
         
-        # 设置窗口大小和位置
-        dialog_width = 600
-        dialog_height = 350
+        # 获取DPI缩放比例
+        dpi_scale = 1.0
+        if hasattr(os, 'name') and os.name == 'nt':
+            try:
+                import ctypes
+                dpi_scale = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
+                print(f"设置窗口DPI缩放比例: {dpi_scale:.2f}")
+            except Exception as e:
+                print(f"设置窗口获取DPI缩放比例失败: {str(e)}")
+        
+        # 根据DPI缩放比例计算窗口大小，位置
+        base_width, base_height = 500, 400  # 减少高度
+        dialog_width = int(base_width * dpi_scale)
+        dialog_height = int(base_height * dpi_scale)
+        
         parent_x = parent.winfo_x()
         parent_y = parent.winfo_y()
         parent_width = parent.winfo_width()

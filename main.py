@@ -429,11 +429,11 @@ class MainWindow:
             other_buttons_frame = ttk.Frame(other_frame)
             other_buttons_frame.pack(fill=X, pady=5)
             
-            # 事件簿按钮
+            # 事件表按钮
             self.event_button = ttk.Button(
                 other_buttons_frame, 
-                text="事件簿", 
-                command=self.show_event_book
+                text="事件表", 
+                command=self.show_event_table
             )
             self.event_button.pack(side=LEFT, padx=5, fill=X)
             
@@ -466,8 +466,8 @@ class MainWindow:
         stay_on_top = self.stay_on_top_var.get()
         self.root.attributes('-topmost', stay_on_top)
         
-    def show_event_book(self):
-        """显示事件簿（暂未实现）"""
+    def show_event_table(self):
+        """显示事件表（暂未实现）"""
         pass
     
     def show_settings(self):
