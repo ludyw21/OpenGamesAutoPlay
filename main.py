@@ -344,6 +344,9 @@ class MainWindow:
             
             ttk.Button(transpose_control_frame, text="-", command=lambda: self.adjust_value(self.transpose_var, -1), width=2).pack(side=LEFT)
             self.transpose_entry = ttk.Entry(transpose_control_frame, textvariable=self.transpose_var, width=5, justify='center')
+            # 添加事件监听器，确保用户直接在输入框中修改值时也能更新事件表
+            self.transpose_entry.bind('<Return>', lambda event: self.on_transpose_octave_change())
+            self.transpose_entry.bind('<FocusOut>', lambda event: self.on_transpose_octave_change())
             self.transpose_entry.pack(side=LEFT)
             ttk.Button(transpose_control_frame, text="+", command=lambda: self.adjust_value(self.transpose_var, 1), width=2).pack(side=LEFT)
             
@@ -359,6 +362,9 @@ class MainWindow:
             
             ttk.Button(octave_control_frame, text="-", command=lambda: self.adjust_value(self.octave_var, -1), width=2).pack(side=LEFT)
             self.octave_entry = ttk.Entry(octave_control_frame, textvariable=self.octave_var, width=5, justify='center')
+            # 添加事件监听器，确保用户直接在输入框中修改值时也能更新事件表
+            self.octave_entry.bind('<Return>', lambda event: self.on_transpose_octave_change())
+            self.octave_entry.bind('<FocusOut>', lambda event: self.on_transpose_octave_change())
             self.octave_entry.pack(side=LEFT)
             ttk.Button(octave_control_frame, text="+", command=lambda: self.adjust_value(self.octave_var, 1), width=2).pack(side=LEFT)
             
@@ -473,8 +479,17 @@ class MainWindow:
         # 如果有当前文件和选中的音轨，生成事件数据
         if hasattr(self, 'current_file_path') and self.current_file_path and self.selected_tracks:
             try:
-                # 使用MidiAnalyzer来生成事件数据，这样可以确保事件数据包含超限标记
-                events, analysis_result = MidiAnalyzer.analyze_midi_file(self.current_file_path, self.selected_tracks)
+                # 获取当前的移调和转位设置
+                transpose = self.transpose_var.get()
+                octave_shift = self.octave_var.get()
+                
+                # 使用MidiAnalyzer来生成事件数据，传递移调和转位参数
+                events, analysis_result = MidiAnalyzer.analyze_midi_file(
+                    self.current_file_path, 
+                    self.selected_tracks,
+                    transpose=transpose,
+                    octave_shift=octave_shift
+                )
                 
                 # 更新当前事件数据和分析结果
                 self.current_events = events
@@ -1180,6 +1195,28 @@ class MainWindow:
     def adjust_value(self, var, delta):
         """调整数值变量"""
         var.set(var.get() + delta)
+        # 重新生成事件数据（应用新的移调/转位设置）
+        self.update_event_data()
+        # 更新分析信息
+        self.update_analysis_info()
+    
+    def on_transpose_octave_change(self):
+        """当移调或转位值直接在输入框中修改时触发"""
+        # 确保输入值是整数
+        try:
+            transpose_value = int(self.transpose_var.get())
+            self.transpose_var.set(transpose_value)
+        except ValueError:
+            self.transpose_var.set(0)
+        
+        try:
+            octave_value = int(self.octave_var.get())
+            self.octave_var.set(octave_value)
+        except ValueError:
+            self.octave_var.set(0)
+        
+        # 重新生成事件数据（应用新的移调/转位设置）
+        self.update_event_data()
         # 更新分析信息
         self.update_analysis_info()
     

@@ -13,10 +13,10 @@ class MidiAnalyzer:
     @staticmethod
     def _get_key_settings():
         """
-        从config.json获取key_settings中的min_note和max_note
+        从config.json获取key_settings中的设置
         
         Returns:
-            tuple: (min_note, max_note)
+            tuple: (min_note, max_note, black_key_mode)
         """
         try:
             config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
@@ -26,12 +26,13 @@ class MidiAnalyzer:
                     if 'key_settings' in config:
                         min_note = config['key_settings'].get('min_note', MidiAnalyzer.DEFAULT_MIN_NOTE)
                         max_note = config['key_settings'].get('max_note', MidiAnalyzer.DEFAULT_MAX_NOTE)
-                        return min_note, max_note
+                        black_key_mode = config['key_settings'].get('black_key_mode', 'auto_sharp')
+                        return min_note, max_note, black_key_mode
         except Exception as e:
             print(f"获取配置时出错: {str(e)}")
         
         # 如果获取失败，返回默认值
-        return MidiAnalyzer.DEFAULT_MIN_NOTE, MidiAnalyzer.DEFAULT_MAX_NOTE
+        return MidiAnalyzer.DEFAULT_MIN_NOTE, MidiAnalyzer.DEFAULT_MAX_NOTE, 'auto_sharp'
     
     @staticmethod
     def get_over_limit_info(analysis_result):
@@ -56,13 +57,15 @@ class MidiAnalyzer:
         }
     
     @staticmethod
-    def analyze_midi_file(file_path, selected_tracks):
+    def analyze_midi_file(file_path, selected_tracks, transpose=0, octave_shift=0):
         """
         分析MIDI文件，从选中的音轨生成事件数据，并标记超限音符
         
         Args:
             file_path: MIDI文件路径
             selected_tracks: 选中的音轨索引集合
+            transpose: 移调值（半音），默认为0
+            octave_shift: 转位值（八度），默认为0
             
         Returns:
             tuple: (events, analysis_result)
@@ -70,8 +73,8 @@ class MidiAnalyzer:
                 analysis_result: 分析结果字典，包含超限信息
         """
         try:
-            # 获取音域范围
-            min_note, max_note = MidiAnalyzer._get_key_settings()
+            # 获取音域范围和黑键模式
+            min_note, max_note, black_key_mode = MidiAnalyzer._get_key_settings()
             
             # 初始化事件列表和音符开始记录
             events = []
@@ -172,28 +175,74 @@ class MidiAnalyzer:
             # 释放临时字典内存
             note_on_events = None
             
+            # 应用移调、转位和黑键自动降音处理
+            # 计算总偏移量：移调值 + 转位值*12
+            total_offset = transpose + (octave_shift * 12)
+            
+            # 需要进行黑键自动降音的音符值（X#）
+            black_notes = {61, 63, 66, 68, 70, 73, 75, 78, 80, 82, 85, 87}
+            
+            # 更新事件列表中的音符值
+            for event in events:
+                # 应用移调和转位
+                if 'note' in event:
+                    # 先应用移调和转位
+                    event['note'] += total_offset
+                    
+                    # 如果是黑键自动降音模式，且音符是黑键，则降1个半音
+                    if black_key_mode == 'auto_sharp' and event['note'] in black_notes:
+                        event['note'] -= 1
+                    
+                    # 更新音组
+                    event['group'] = group_for_note(event['note'])
+                    
+                    # 重新判断是否超限
+                    event['is_over_limit'] = event['note'] < min_note or event['note'] > max_note
+            
             # 按时间排序所有事件
             events.sort(key=lambda x: x['time'])
             
-            # 构建分析结果
+            # 重新计算统计数据（基于处理后的音符值）
+            processed_min_note = float('inf')
+            processed_max_note = -float('inf')
+            processed_under_min_count = 0
+            processed_over_max_count = 0
+            
+            # 只考虑note_on事件的音符值进行统计
+            for event in events:
+                if event['type'] == 'note_on' and 'note' in event:
+                    note_value = event['note']
+                    processed_min_note = min(processed_min_note, note_value)
+                    processed_max_note = max(processed_max_note, note_value)
+                    
+                    if note_value < min_note:
+                        processed_under_min_count += 1
+                    elif note_value > max_note:
+                        processed_over_max_count += 1
+            
+            # 构建分析结果（基于处理后的音符值）
             analysis_result = {
-                'min_note': min_note_value if min_note_value != float('inf') else None,
-                'max_note': max_note_value if max_note_value != -float('inf') else None,
-                'under_min_count': under_min_count,
-                'over_max_count': over_max_count,
-                'min_note_name': get_note_name(min_note_value) if min_note_value != float('inf') else '',
-                'max_note_name': get_note_name(max_note_value) if max_note_value != -float('inf') else '',
-                'min_note_group': group_for_note(min_note_value) if min_note_value != float('inf') else '',
-                'max_note_group': group_for_note(max_note_value) if max_note_value != -float('inf') else '',
-                'is_min_over_limit': min_note_value < min_note if min_note_value != float('inf') else False,
-                'is_max_over_limit': max_note_value > max_note if max_note_value != -float('inf') else False,
-                'total_over_limit_count': under_min_count + over_max_count,
+                'min_note': processed_min_note if processed_min_note != float('inf') else None,
+                'max_note': processed_max_note if processed_max_note != -float('inf') else None,
+                'under_min_count': processed_under_min_count,
+                'over_max_count': processed_over_max_count,
+                'min_note_name': get_note_name(processed_min_note) if processed_min_note != float('inf') else '',
+                'max_note_name': get_note_name(processed_max_note) if processed_max_note != -float('inf') else '',
+                'min_note_group': group_for_note(processed_min_note) if processed_min_note != float('inf') else '',
+                'max_note_group': group_for_note(processed_max_note) if processed_max_note != -float('inf') else '',
+                'is_min_over_limit': processed_min_note < min_note if processed_min_note != float('inf') else False,
+                'is_max_over_limit': processed_max_note > max_note if processed_max_note != -float('inf') else False,
+                'total_over_limit_count': processed_under_min_count + processed_over_max_count,
                 'config_min_note': min_note,
-                'config_max_note': max_note
+                'config_max_note': max_note,
+                'transpose': transpose,
+                'octave_shift': octave_shift,
+                'black_key_mode': black_key_mode
             }
             
             print(f"MIDI分析器: 已生成事件数据：{len(events)}个事件，{len(events)/2}个音符。")
-            print(f"超限分析: 低于最低音数量={under_min_count}, 高于最高音数量={over_max_count}")
+            print(f"超限分析: 低于最低音数量={processed_under_min_count}, 高于最高音数量={processed_over_max_count}")
+            print(f"处理设置: 移调={transpose}, 转位={octave_shift}, 黑键模式={black_key_mode}")
             
             return events, analysis_result
             
