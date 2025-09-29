@@ -75,7 +75,8 @@ class MidiAnalyzer:
             
             # 初始化事件列表和音符开始记录
             events = []
-            note_starts = {}
+            # 使用字典存储note_on事件的索引，避免O(n²)的查找
+            note_on_events = {}
             
             # 初始化统计数据
             min_note_value = float('inf')
@@ -101,11 +102,6 @@ class MidiAnalyzer:
                         # 处理音符开始事件
                         if msg.type == 'note_on' and msg.velocity > 0:
                             note_key = (msg.channel, msg.note)
-                            note_starts[note_key] = {
-                                'time': track_time,
-                                'track': track_idx,
-                                'velocity': msg.velocity
-                            }
                             
                             # 更新统计数据
                             min_note_value = min(min_note_value, msg.note)
@@ -121,7 +117,7 @@ class MidiAnalyzer:
                                 over_max_count += 1
                             
                             # 添加note_on事件，包含超限标记
-                            events.append({
+                            event = {
                                 'time': track_time,
                                 'type': 'note_on',
                                 'note': msg.note,
@@ -129,25 +125,34 @@ class MidiAnalyzer:
                                 'group': group_for_note(msg.note),
                                 'track': track_idx,
                                 'is_over_limit': is_over_limit  # 添加超限标记
+                            }
+                            events.append(event)
+                            
+                            # 存储事件引用，用于后续快速查找
+                            if note_key not in note_on_events:
+                                note_on_events[note_key] = []
+                            note_on_events[note_key].append({
+                                'event': event,
+                                'time': track_time,
+                                'track': track_idx
                             })
                         
                         # 处理音符结束事件
                         elif (msg.type == 'note_off') or (msg.type == 'note_on' and msg.velocity == 0):
                             note_key = (msg.channel, msg.note)
-                            if note_key in note_starts:
-                                # 计算音符持续时间
-                                start_time = note_starts[note_key]['time']
-                                duration = track_time - start_time
-                                
-                                # 更新对应的note_on事件，添加持续时间和结束时间
-                                for event in events:
-                                    if (event['type'] == 'note_on' and 
-                                        event['channel'] == msg.channel and 
-                                        event['note'] == msg.note and 
-                                        event['track'] == track_idx and
-                                        abs(event['time'] - start_time) < 0.01):
-                                        event['duration'] = duration
-                                        event['end'] = track_time
+                            if note_key in note_on_events and note_on_events[note_key]:
+                                # 找到最近的未配对的note_on事件
+                                # 倒序查找，找到最近的匹配事件
+                                for i in range(len(note_on_events[note_key]) - 1, -1, -1):
+                                    note_info = note_on_events[note_key][i]
+                                    if note_info['track'] == track_idx and 'duration' not in note_info['event']:
+                                        # 计算音符持续时间
+                                        start_time = note_info['time']
+                                        duration = track_time - start_time
+                                        
+                                        # 直接更新事件，避免线性查找
+                                        note_info['event']['duration'] = duration
+                                        note_info['event']['end'] = track_time
                                         break
                             
                             # 判断是否超限
@@ -163,6 +168,9 @@ class MidiAnalyzer:
                                 'track': track_idx,
                                 'is_over_limit': is_over_limit  # 添加超限标记
                             })
+            
+            # 释放临时字典内存
+            note_on_events = None
             
             # 按时间排序所有事件
             events.sort(key=lambda x: x['time'])

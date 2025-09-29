@@ -469,7 +469,7 @@ class MainWindow:
         self.root.attributes('-topmost', stay_on_top)
         
     def update_event_data(self):
-        """根据选中音轨预生成事件数据"""
+        """根据选中音轨预生成事件数据（唯一负责生成数据的方法）"""
         # 如果有当前文件和选中的音轨，生成事件数据
         if hasattr(self, 'current_file_path') and self.current_file_path and self.selected_tracks:
             try:
@@ -1097,12 +1097,14 @@ class MainWindow:
         # print("===== 点击后状态 =====")
         # self._print_track_states()
         
-        # 更新分析信息和按钮状态
-        self.update_analysis_info()
+        # 更新按钮状态
         self.track_selected()
         
-        # 更新事件数据（音轨选择变动时预生成事件）
+        # 先更新事件数据（音轨选择变动时预生成事件）
         self.update_event_data()
+        
+        # 然后更新分析信息显示
+        self.update_analysis_info()
         
         # 确保返回'break'以阻止默认行为
         return 'break'
@@ -1182,7 +1184,7 @@ class MainWindow:
         self.update_analysis_info()
     
     def update_analysis_info(self):
-        """更新音轨分析信息显示"""
+        """更新音轨分析信息显示（只负责显示，不生成数据）"""
         # 获取当前的移调和转位设置
         transpose = self.transpose_var.get()
         octave = self.octave_var.get()
@@ -1212,44 +1214,31 @@ class MainWindow:
             # 更新第一行文本
             first_line = f"音轨{{{tracks_str}}}   移调:{transpose}  转位:{octave}  总音符:{total_notes}"
             
-            # 首先尝试使用已有的分析结果
+            # 只使用已有的分析结果，不在这里生成新数据
             if hasattr(self, 'current_analysis_result') and self.current_analysis_result:
                 analysis_result = self.current_analysis_result
+                
+                # 构建最高音和最低音的显示文本
+                if analysis_result['max_note'] is not None:
+                    max_note_text = f"最高音: {analysis_result['max_note_name']}({analysis_result['max_note']})  {analysis_result['max_note_group']}  "
+                    max_note_text += "超限" if analysis_result['is_max_over_limit'] else "未超限"
+                    max_note_text += f"  超限数量: {analysis_result['over_max_count']}"
+                else:
+                    max_note_text = "最高音: - 未检测"
+                
+                if analysis_result['min_note'] is not None:
+                    min_note_text = f"最低音: {analysis_result['min_note_name']}({analysis_result['min_note']})  {analysis_result['min_note_group']}  "
+                    min_note_text += "超限" if analysis_result['is_min_over_limit'] else "未超限"
+                    min_note_text += f"  超限数量: {analysis_result['under_min_count']}"
+                else:
+                    min_note_text = "最低音: - 未检测"
+                
+                self.analysis_text = f"{first_line}\n{max_note_text}\n{min_note_text}"
             else:
-                # 如果没有已有的分析结果，则分析MIDI文件
-                try:
-                    events, analysis_result = MidiAnalyzer.analyze_midi_file(self.current_file_path, self.selected_tracks)
-                    
-                    # 更新当前事件数据和分析结果
-                    self.current_events = events
-                    self.current_analysis_result = analysis_result
-                except Exception as e:
-                    print(f"分析MIDI文件时出错: {str(e)}")
-                    self.analysis_text = f"{first_line}\n最高音: - 分析失败\n最低音: - 分析失败"
-                    self.current_analysis_result = None
-                    # 立即更新UI并返回
-                    self.analysis_label.config(text=self.analysis_text)
-                    return
-            
-            # 构建最高音和最低音的显示文本
-            if analysis_result['max_note'] is not None:
-                max_note_text = f"最高音: {analysis_result['max_note_name']}({analysis_result['max_note']})  {analysis_result['max_note_group']}  "
-                max_note_text += "超限" if analysis_result['is_max_over_limit'] else "未超限"
-                max_note_text += f"  超限数量: {analysis_result['over_max_count']}"
-            else:
-                max_note_text = "最高音: - 未检测"
-            
-            if analysis_result['min_note'] is not None:
-                min_note_text = f"最低音: {analysis_result['min_note_name']}({analysis_result['min_note']})  {analysis_result['min_note_group']}  "
-                min_note_text += "超限" if analysis_result['is_min_over_limit'] else "未超限"
-                min_note_text += f"  超限数量: {analysis_result['under_min_count']}"
-            else:
-                min_note_text = "最低音: - 未检测"
-            
-            self.analysis_text = f"{first_line}\n{max_note_text}\n{min_note_text}"
+                # 如果没有分析结果，显示提示文本
+                self.analysis_text = f"{first_line}\n最高音: - 未分析\n最低音: - 未分析"
         else:
             self.analysis_text = "音轨{无选中}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测"
-            self.current_analysis_result = None
         
         # 确保UI更新
         self.analysis_label.config(text=self.analysis_text)
