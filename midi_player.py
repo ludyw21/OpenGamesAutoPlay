@@ -37,6 +37,7 @@ class MidiPlayer:
             
         self.playing = False
         self.paused = False
+        self.counting_down = False  # 倒计时状态
         self.current_file = None
         self.play_thread = None
         self._pressed_keys = set()
@@ -81,7 +82,7 @@ class MidiPlayer:
     def get_current_time(self):
         """获取当前播放时间（秒）"""
         try:
-            if not self.playing:
+            if not self.playing or self.counting_down:
                 return 0
                 
             with self._lock:
@@ -437,12 +438,14 @@ class MidiPlayer:
             print(f"播放时出错: {str(e)}")
             self.stop()
     
-    def play_from_events(self, events, total_time=None):
+    def play_from_events(self, events, total_time=None, countdown_callback=None, completion_callback=None):
         """从预处理的事件表播放，确保包含转位、移调、黑键等预处理结果
         
         Args:
             events: 预处理过的事件列表，包含note_on和note_off事件
             total_time: 可选的总时长，不提供则自动计算
+            countdown_callback: 可选的倒计时回调函数，接收剩余秒数作为参数
+            completion_callback: 可选的倒计时完成回调函数
         """
         try:
             if not events:
@@ -453,6 +456,7 @@ class MidiPlayer:
             with self._lock:
                 self.playing = True
                 self.paused = False
+                self.counting_down = True  # 设置为倒计时状态
                 self.start_time = time.time() * 1000
                 self.pause_time = 0
                 self.total_pause_time = 0
@@ -469,7 +473,26 @@ class MidiPlayer:
             print("将在3秒后开始播放，请确保当前窗口正确...")
             for i in range(3, 0, -1):
                 print(f"倒计时: {i}秒")
+                # 调用回调函数通知UI更新
+                if countdown_callback:
+                    try:
+                        countdown_callback(i)
+                    except Exception as e:
+                        print(f"倒计时回调错误: {str(e)}")
                 time.sleep(1)
+            
+            # 倒计时完成后通知UI
+            if completion_callback:
+                try:
+                    completion_callback()
+                except Exception as e:
+                    print(f"倒计时完成回调错误: {str(e)}")
+            
+            # 倒计时结束，更新状态
+            with self._lock:
+                self.counting_down = False
+                # 重新设置开始时间，确保从倒计时结束时开始计算
+                self.start_time = time.time() * 1000
             
             # 开始播放事件表
             self._play_from_events_thread(events)
@@ -495,31 +518,44 @@ class MidiPlayer:
             event_count = len(sorted_events)
             
             while event_index < event_count:
-                # 检查播放状态
+                # 短暂获取锁检查播放状态
                 with self._lock:
                     if not self.playing:
                         break
                     is_paused = self.paused
                     
-                    # 处理暂停状态
-                    if is_paused:
-                        # 记录暂停时的已播放时间
-                        if playback_start_time:
-                            self._elapsed_time = time.time() - playback_start_time
-                        # 等待直到取消暂停
-                        while self.paused and self.playing:
-                            time.sleep(0.1)
-                        # 如果被停止，则退出循环
+                    # 只在锁内记录暂停时的已播放时间
+                    if is_paused and playback_start_time:
+                        self._elapsed_time = time.time() - playback_start_time
+                
+                # 处理暂停状态 - 在锁外执行
+                if is_paused:
+                    # 等待直到取消暂停或停止 - 定期短暂获取锁检查状态
+                    while True:
+                        with self._lock:
+                            current_paused = self.paused
+                            current_playing = self.playing
+                        
+                        if not current_paused or not current_playing:
+                            break
+                        time.sleep(0.1)
+                    
+                    # 再次检查播放状态
+                    with self._lock:
                         if not self.playing:
                             break
-                        # 如果被恢复播放，则增加3秒延迟
-                        print("准备恢复播放，倒计时3秒...")
-                        for i in range(3, 0, -1):
-                            print(f"{i}...")
-                            time.sleep(1)
-                        # 重新计算开始时间，保持播放进度
+                        # 确认确实是从暂停中恢复
+                        if not self.paused:
+                            need_delay = True
+                        else:
+                            need_delay = False
+                    
+                    # 如果需要恢复播放，执行3秒延迟
+                    # 注意：这里的恢复逻辑已经被移到resume方法中，所以这里不再需要倒计时
+                    if need_delay:
+                        # 更新播放开始时间
                         playback_start_time = time.time() - self._elapsed_time
-                        continue
+                    continue
                 
                 # 获取当前时间
                 current_time = time.time() - playback_start_time
@@ -587,27 +623,60 @@ class MidiPlayer:
                 return True
             return False
 
-    def resume(self):
-        """恢复播放，增加3秒延迟"""
+    def resume(self, countdown_callback=None, completion_callback=None):
+        """恢复播放，增加3秒延迟
+        
+        Args:
+            countdown_callback: 可选的倒计时回调函数，接收剩余秒数作为参数
+            completion_callback: 可选的倒计时完成回调函数
+            
+        Returns:
+            bool: 是否成功恢复播放
+        """
         try:
+            # 先检查状态，获取锁的时间要尽量短
             with self._lock:
                 if not self.playing or not self.paused:
                     return False
                 
-                # 增加3秒恢复延迟
+                # 设置为倒计时状态
+                self.counting_down = True
+                # 记录需要恢复的状态
+                need_resume = True
+            
+            if need_resume:
+                # 3秒延迟在锁外执行，避免阻塞其他操作
                 print("将在3秒后恢复播放...")
                 for i in range(3, 0, -1):
                     print(f"倒计时: {i}秒")
+                    # 调用回调函数通知UI更新
+                    if countdown_callback:
+                        try:
+                            countdown_callback(i)
+                        except Exception as e:
+                            print(f"倒计时回调错误: {str(e)}")
                     time.sleep(1)
                 
-                self.paused = False
-                if self.pause_time:
-                    self.total_pause_time += time.time() * 1000 - self.pause_time
-                self.pause_time = 0
-                return True
+                # 倒计时完成后通知UI
+                if completion_callback:
+                    try:
+                        completion_callback()
+                    except Exception as e:
+                        print(f"倒计时完成回调错误: {str(e)}")
+                
+                # 恢复播放状态时再次获取锁
+                with self._lock:
+                    self.paused = False
+                    self.counting_down = False  # 结束倒计时状态
+                    if self.pause_time:
+                        self.total_pause_time += time.time() * 1000 - self.pause_time
+                    self.pause_time = 0
+                    return True
             
         except Exception as e:
             print(f"恢复播放时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def stop(self):
@@ -615,6 +684,7 @@ class MidiPlayer:
         with self._lock:
             self.playing = False
             self.paused = False
+            self.counting_down = False
             self.current_file = None
             self._release_all_keys()
             print("停止播放")

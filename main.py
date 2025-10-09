@@ -1281,12 +1281,93 @@ class MainWindow:
         # 确保UI更新
         self.analysis_label.config(text=self.analysis_text)
     
+    def _update_play_button_during_countdown(self, remaining_seconds):
+        """倒计时期间更新播放按钮文本
+        
+        Args:
+            remaining_seconds: 剩余秒数
+        """
+        try:
+            print(f"更新按钮倒计时文本: 播放 ({remaining_seconds}s)")
+            # 确保在UI线程中更新
+            def update_button():
+                try:
+                    self.play_button.config(text=f"播放 ({remaining_seconds}s)")
+                    print(f"按钮文本已更新为: 播放 ({remaining_seconds}s)")
+                except Exception as inner_e:
+                    print(f"直接更新按钮文本时出错: {str(inner_e)}")
+            
+            # 使用after方法在UI线程中更新按钮文本
+            self.play_button.after(0, update_button)
+        except Exception as e:
+            print(f"更新按钮倒计时文本时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
+    def _update_play_button_to_pause(self):
+        """倒计时结束后将按钮文本更新为暂停"""
+        try:
+            print("更新按钮文本为: 暂停")
+            # 确保在UI线程中更新
+            def update_button():
+                try:
+                    self.play_button.config(text="暂停")
+                    print("按钮文本已更新为: 暂停")
+                except Exception as inner_e:
+                    print(f"直接更新按钮文本时出错: {str(inner_e)}")
+            
+            # 使用after方法在UI线程中更新按钮文本
+            self.play_button.after(0, update_button)
+        except Exception as e:
+            print(f"更新按钮文本为暂停时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+    
     def toggle_play(self):
         """切换播放/暂停状态"""
         if not self.midi_player.playing:
             self.start_playback()
         else:
-            self.pause_playback()
+            # 检查是否处于暂停状态
+            if self.midi_player.paused:
+                # 如果是暂停状态，恢复播放
+                try:
+                    # 立即更新按钮文本为倒计时状态，避免延迟
+                    self._update_play_button_during_countdown(3)
+                    
+                    # 在恢复播放倒计时开始时，显示正确的剩余时间
+                    if self.midi_player and hasattr(self.midi_player, 'total_time') and hasattr(self.midi_player, 'get_current_time'):
+                        total_time = self.midi_player.get_total_time()
+                        current_time = self.midi_player.get_current_time()  # 应该是0，因为在倒计时中
+                        remaining_time = max(0, total_time - current_time)
+                        minutes, seconds = divmod(int(remaining_time), 60)
+                        time_str = f"剩余时间: {minutes:02d}:{seconds:02d}"
+                        self.time_label.config(text=time_str)
+                    
+                    # 创建一个函数来封装恢复播放的逻辑
+                    def resume_playback_thread():
+                        # 定义恢复播放时的倒计时回调
+                        def resume_countdown_callback(remaining_seconds):
+                            self._update_play_button_during_countdown(remaining_seconds)
+                        
+                        # 定义倒计时完成回调
+                        def resume_completion_callback():
+                            self._update_play_button_to_pause()
+                        
+                        # 执行恢复播放，包含倒计时和完成回调
+                        self.midi_player.resume(
+                            countdown_callback=resume_countdown_callback,
+                            completion_callback=resume_completion_callback
+                        )
+                    
+                    # 在单独的线程中执行恢复播放，避免阻塞UI
+                    threading.Thread(target=resume_playback_thread, daemon=True).start()
+                except Exception as e:
+                    print(f"恢复播放时出错: {str(e)}")
+                    messagebox.showerror("播放错误", f"恢复播放时出错: {str(e)}")
+            else:
+                # 如果不是暂停状态，暂停播放
+                self.pause_playback()
     
     def start_playback(self):
         """开始播放，使用预处理的事件表"""
@@ -1305,18 +1386,46 @@ class MainWindow:
                     messagebox.showerror("错误", "没有有效的事件数据，请重新加载MIDI文件")
                     return
                 
+                # 立即更新按钮文本为倒计时状态，避免延迟
+                self._update_play_button_during_countdown(3)
+                
                 # 使用新的play_from_events方法播放预处理的事件表
                 # 计算总时长
                 total_time = None
                 if self.current_events:
                     max_time = max(event['time'] for event in self.current_events)
                     total_time = max_time
+                    # 在倒计时开始时，显示总时长作为剩余时间
+                    minutes, seconds = divmod(int(total_time), 60)
+                    time_str = f"剩余时间: {minutes:02d}:{seconds:02d}"
+                    self.time_label.config(text=time_str)
                 
-                threading.Thread(target=self.midi_player.play_from_events, 
-                               args=(self.current_events, total_time), 
+                # 定义开始播放时的倒计时回调
+                def play_countdown_callback(remaining_seconds):
+                    self._update_play_button_during_countdown(remaining_seconds)
+                
+                # 定义完整的播放线程函数
+                def play_thread_function():
+                    try:
+                        # 定义倒计时完成回调
+                        def play_completion_callback():
+                            self._update_play_button_to_pause()
+                        
+                        # 播放开始，传入倒计时回调和完成回调
+                        self.midi_player.play_from_events(
+                            self.current_events, 
+                            total_time, 
+                            countdown_callback=play_countdown_callback,
+                            completion_callback=play_completion_callback
+                        )
+                    except Exception as e:
+                        print(f"播放线程错误: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
+                
+                threading.Thread(target=play_thread_function, 
                                daemon=True).start()
                 
-                self.play_button.config(text="暂停")
                 self.stop_button.config(state=NORMAL)
         except Exception as e:
             print(f"开始播放时出错: {str(e)}")
@@ -1327,8 +1436,10 @@ class MainWindow:
     def pause_playback(self):
         """暂停播放"""
         try:
-            self.midi_player.pause()
-            self.play_button.config(text="播放")
+            # 调用pause方法并检查是否成功暂停
+            if self.midi_player.pause():
+                # 只有成功暂停时才更新按钮文本
+                self.play_button.config(text="播放")
         except Exception as e:
             print(f"暂停播放时出错: {str(e)}")
             messagebox.showerror("播放错误", f"暂停播放时出错: {str(e)}")
@@ -1549,9 +1660,6 @@ class MainWindow:
                 self.root.after(0, lambda time_str=remaining_time_str: 
                                self.update_remaining_time_label(time_str))
                 
-                # 恢复按钮文本为"预览"
-                self.root.after(0, lambda: self.preview_button.config(text="预览"))
-                
                 time.sleep(0.5)  # 每0.5秒更新一次剩余时间
             
             # 如果仍在播放但预览已取消，停止播放
@@ -1681,16 +1789,19 @@ class MainWindow:
     def update_progress(self):
         """更新进度显示"""
         try:
+            # 检查midi_player是否存在并且正在播放，同时确保不在倒计时状态
             if self.midi_player and self.midi_player.playing:
-                current_time = self.midi_player.get_current_time()
-                total_time = self.midi_player.get_total_time()
-                
-                if total_time > 0:
-                    remaining_time = total_time - current_time
-                    # 格式化为分:秒
-                    minutes, seconds = divmod(int(remaining_time), 60)
-                    time_str = f"剩余时间: {minutes:02d}:{seconds:02d}"
-                    self.time_label.config(text=time_str)
+                # 检查是否有counting_down属性并且不在倒计时状态
+                if hasattr(self.midi_player, 'counting_down') and not self.midi_player.counting_down:
+                    current_time = self.midi_player.get_current_time()
+                    total_time = self.midi_player.get_total_time()
+                    
+                    if total_time > 0:
+                        remaining_time = total_time - current_time
+                        # 格式化为分:秒
+                        minutes, seconds = divmod(int(remaining_time), 60)
+                        time_str = f"剩余时间: {minutes:02d}:{seconds:02d}"
+                        self.time_label.config(text=time_str)
             
             # 继续定时更新
             self.progress_timer = self.root.after(100, self.update_progress)
