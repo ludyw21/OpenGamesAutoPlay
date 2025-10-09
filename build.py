@@ -57,8 +57,8 @@ def build_exe():
         
     # 获取版本号和设置输出目录
     version = get_version()
-    output_dir = "dist/yyslsAuto-play"
-    exe_name = f"燕云自动演奏_v{version}"
+    output_dir = "dist/OpenGamesAuto-play"
+    exe_name = f"开放世界自动演奏_v{version}"
     
     # 获取当前脚本所在目录
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -74,7 +74,7 @@ def build_exe():
         # 清理旧的构建文件
         clean_build()
         
-        print(f"开始构建版本 {version}...")
+        print(f"开始构建OpenGamesAutoPlay版本 {version}...")
         
         # 使用 subprocess 运行 PyInstaller
         cmd = [
@@ -125,9 +125,9 @@ def build_exe():
                 shutil.copy2('LICENSE', output_dir)
                 
             # 创建zip文件
-            zip_name = f"yyslsAuto-play_{version}.zip"
+            zip_name = f"OpenGamesAuto-play_{version}.zip"
             shutil.make_archive(
-                os.path.join('dist', f"yyslsAuto-play_{version}"),
+                os.path.join('dist', f"OpenGamesAuto-play_{version}"),
                 'zip',
                 output_dir
             )
@@ -151,4 +151,4 @@ if __name__ == '__main__':
         print("2. 请确保以管理员身份运行程序")
         print("3. 首次运行可能需要等待几秒钟")
     else:
-        print("\n构建失败，请检查错误信息") 
+        print("\n构建失败，请检查错误信息")

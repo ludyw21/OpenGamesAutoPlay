@@ -1,7 +1,9 @@
-PyQt5>=5.15.0
-keyboard>=0.13.5
-mido>=1.2.10
-python-rtmidi>=1.4.9
-pywin32>=305
-pyinstaller>=5.13.0
-pygame>=2.5.0 
+
+ttkbootstrap>=1.10.0 # 界面库
+
+keyboard>=0.13.5 # 全局键盘控制
+mido>=1.2.10 # MIDI文件处理
+pretty-midi>=0.2.10 # MIDI文件分析，提供准确的秒级时间
+pygame>=2.5.0 # 音频播放
+python-rtmidi>=1.4.9 # MIDI输入输出
+pyinstaller>=5.13.0 # 打包工具
