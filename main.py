@@ -771,6 +771,12 @@ class MainWindow:
             file_name = os.path.basename(file_path)
             self.current_song_label.config(text=f"当前歌曲：{file_name}")
         
+        # 重置移调和转位值为0
+        if hasattr(self, 'transpose_var'):
+            self.transpose_var.set(0)
+        if hasattr(self, 'octave_var'):
+            self.octave_var.set(0)
+        
         # 解析MIDI文件，获取音轨信息
         self._load_midi_tracks(file_path)
         
@@ -1447,9 +1453,22 @@ class MainWindow:
     def stop_playback(self):
         """停止播放"""
         try:
+            # 停止播放，包括停止任何正在进行的倒计时
             self.midi_player.stop()
-            self.play_button.config(text="播放", state=NORMAL)
-            self.stop_button.config(state=DISABLED)
+            
+            # 使用UI线程安全的方式更新按钮状态
+            def update_buttons():
+                try:
+                    # 立即将播放按钮文本设置为"播放"
+                    self.play_button.config(text="播放", state=NORMAL)
+                    self.stop_button.config(state=DISABLED)
+                    print("按钮状态已更新为播放状态")
+                except Exception as inner_e:
+                    print(f"更新按钮状态时出错: {str(inner_e)}")
+            
+            # 使用after方法在UI线程中更新按钮
+            self.root.after(0, update_buttons)
+            
         except Exception as e:
             print(f"停止播放时出错: {str(e)}")
             messagebox.showerror("播放错误", f"停止播放时出错: {str(e)}")

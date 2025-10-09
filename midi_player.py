@@ -471,7 +471,14 @@ class MidiPlayer:
             
             # 3秒后开始播放
             print("将在3秒后开始播放，请确保当前窗口正确...")
+            countdown_stopped = False
             for i in range(3, 0, -1):
+                # 检查是否需要停止倒计时
+                with self._lock:
+                    if not self.counting_down:
+                        countdown_stopped = True
+                        break
+                
                 print(f"倒计时: {i}秒")
                 # 调用回调函数通知UI更新
                 if countdown_callback:
@@ -480,6 +487,10 @@ class MidiPlayer:
                     except Exception as e:
                         print(f"倒计时回调错误: {str(e)}")
                 time.sleep(1)
+            
+            # 如果倒计时被停止，直接返回
+            if countdown_stopped:
+                return
             
             # 倒计时完成后通知UI
             if completion_callback:
@@ -647,7 +658,14 @@ class MidiPlayer:
             if need_resume:
                 # 3秒延迟在锁外执行，避免阻塞其他操作
                 print("将在3秒后恢复播放...")
+                countdown_stopped = False
                 for i in range(3, 0, -1):
+                    # 检查是否需要停止倒计时
+                    with self._lock:
+                        if not self.counting_down:
+                            countdown_stopped = True
+                            break
+                    
                     print(f"倒计时: {i}秒")
                     # 调用回调函数通知UI更新
                     if countdown_callback:
@@ -656,6 +674,10 @@ class MidiPlayer:
                         except Exception as e:
                             print(f"倒计时回调错误: {str(e)}")
                     time.sleep(1)
+                
+                # 如果倒计时被停止，直接返回
+                if countdown_stopped:
+                    return
                 
                 # 倒计时完成后通知UI
                 if completion_callback:
