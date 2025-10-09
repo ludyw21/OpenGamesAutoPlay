@@ -25,6 +25,7 @@ wheels/
 *.spec
 build/
 dist/
+temp/
 
 # IDE
 .idea/
