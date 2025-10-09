@@ -31,7 +31,7 @@ class SettingsDialog:
                 print(f"设置窗口获取DPI缩放比例失败: {str(e)}")
         
         # 根据DPI缩放比例计算窗口大小，位置
-        base_width, base_height = 518, 528  # 减少高度
+        base_width, base_height = 518, 548  # 增加高度20
         dialog_width = int(base_width * dpi_scale)
         dialog_height = int(base_height * dpi_scale)
         
@@ -84,6 +84,42 @@ class SettingsDialog:
         # 更新用户自定义按键
         if 'note_to_key' in self.key_settings:
             self.note_to_key.update(self.key_settings['note_to_key'])
+        
+        # 定义预设配置
+        self.preset_configs = {
+            "燕云十六声(36键)": {
+                "min_note": 48,
+                "max_note": 83,
+                "black_key_mode": "support_black_key",
+                "note_to_key": NOTE_TO_KEY  # 使用完整的NOTE_TO_KEY映射
+            },
+            "燕云十六声(21键)": {
+                "min_note": 48,
+                "max_note": 83,
+                "black_key_mode": "auto_sharp",
+                "note_to_key": {note: key for note, key in NOTE_TO_KEY.items() if '+' not in key}  # 只包含单个按键，不包含组合键
+            }
+        }
+        
+        # 添加快捷设置区域在基础配置上方
+        preset_frame = ttk.Frame(key_frame)
+        preset_frame.pack(fill=X, padx=5, pady=10, anchor=W)
+        
+        # 快捷设置标签
+        ttk.Label(preset_frame, text="快捷设置：").pack(side=LEFT, padx=5, pady=5)
+        
+        # 预设下拉框
+        self.preset_var = tk.StringVar()
+        preset_combo = ttk.Combobox(preset_frame, textvariable=self.preset_var, 
+                                   values=list(self.preset_configs.keys()), width=20, state='readonly')
+        # 默认选择第一个选项
+        if self.preset_configs:
+            preset_combo.current(0)
+        preset_combo.pack(side=LEFT, padx=5, pady=5)
+        
+        # 确认按钮
+        confirm_button = ttk.Button(preset_frame, text="确定", command=self.apply_preset_config)
+        confirm_button.pack(side=LEFT, padx=5, pady=5)
         
         # 基础配置组
         base_frame = ttk.LabelFrame(key_frame, text="基础配置")
@@ -151,6 +187,8 @@ class SettingsDialog:
         
         # 初始更新按键设置
         self.update_keyboard_settings()
+        
+
     
     def create_group_combobox_data(self):
         """创建分组级联下拉框的数据结构"""
@@ -497,6 +535,12 @@ class SettingsDialog:
             foreground="#666"
         )
         tip_label.pack(pady=20)
+        
+        # 恢复默认按钮
+        restore_frame = ttk.Frame(shortcut_frame)
+        restore_frame.pack(fill=X, pady=10)
+        restore_button = ttk.Button(restore_frame, text="恢复默认", command=self.restore_default_shortcuts)
+        restore_button.pack(side=RIGHT, padx=10, pady=5)
     
     def create_shortcut_setting(self, parent, label_text, action_type):
         """创建单个快捷键设置行"""
@@ -630,6 +674,8 @@ class SettingsDialog:
         button_frame = ttk.Frame(self.dialog)
         button_frame.pack(fill=X, padx=10, pady=10)
         
+
+        
         # 取消按钮
         cancel_button = ttk.Button(button_frame, text="取消", command=self.cancel)
         cancel_button.pack(side=RIGHT, padx=5)
@@ -724,12 +770,114 @@ class SettingsDialog:
             self.parent.update_keyboard_hooks()
         
         # 显示成功消息
-        messagebox.showinfo("成功", "设置已保存")
+        # messagebox.showinfo("成功", "设置已保存")
         
         # 关闭窗口
         self.dialog.destroy()
+    
+    def apply_preset_config(self):
+        """应用预设配置"""
+        try:
+            # 获取选择的预设配置
+            selected_preset = self.preset_var.get()
+            if not selected_preset or selected_preset not in self.preset_configs:
+                return
+            
+            preset = self.preset_configs[selected_preset]
+            
+            # 更新配置数据
+            config_data = self.config_manager.data
+            key_settings = {
+                'min_note': preset['min_note'],
+                'max_note': preset['max_note'],
+                'black_key_mode': preset['black_key_mode'],
+                'note_to_key': {str(note): key for note, key in preset['note_to_key'].items()}  # 转换为字符串键
+            }
+            config_data['key_settings'] = key_settings
+            
+            # 保存配置
+            self.config_manager.save(config_data)
+            
+            # 更新当前设置
+            self.key_settings = key_settings
+            self.note_to_key = preset['note_to_key']
+            
+            # 更新UI
+            self.black_key_mode.set(preset['black_key_mode'])
+            
+            # 更新最低音和最高音选择
+            from groups import GROUPS, group_for_note, get_note_name
+            
+            # 为最低音找到对应的分组
+            min_group = group_for_note(preset['min_note'])
+            
+            # 直接设置分组值并触发事件
+            self.min_group_var.set(min_group)
+            self.on_group_selected('min')
+            
+            # 设置默认音符
+            for note_text, note_num in self.group_note_data[min_group][1].items():
+                if note_num == preset['min_note']:
+                    self.min_note_var.set(note_text)
+                    break
+            
+            # 为最高音找到对应的分组
+            max_group = group_for_note(preset['max_note'])
+            
+            # 直接设置分组值并触发事件
+            self.max_group_var.set(max_group)
+            self.on_group_selected('max')
+            
+            # 设置默认音符
+            for note_text, note_num in self.group_note_data[max_group][1].items():
+                if note_num == preset['max_note']:
+                    self.max_note_var.set(note_text)
+                    break
+            
+            # 更新按键设置显示
+            self.update_keyboard_settings()
+            
+            # 移除成功消息弹窗，直接刷新页面
+            
+        except Exception as e:
+            print(f"应用预设配置时出错: {str(e)}")
+            messagebox.showerror("错误", f"应用预设配置时出错: {str(e)}")
     
     def cancel(self):
         """取消设置"""
         self.shortcuts = self.original_shortcuts.copy()
         self.dialog.destroy()
+    
+    def restore_default_shortcuts(self):
+        """恢复默认快捷键设置"""
+        from keyboard_mapping import CONTROL_KEYS
+        
+        try:
+            # 应用默认快捷键
+            for action_type, default_shortcut in CONTROL_KEYS.items():
+                if action_type in self.shortcuts and action_type in self.shortcut_vars:
+                    # 更新配置
+                    self.shortcuts[action_type] = default_shortcut
+                    
+                    # 更新UI变量
+                    vars = self.shortcut_vars[action_type]
+                    mod1, mod2, key = self.parse_shortcut(default_shortcut)
+                    vars['mod1'].set(mod1)
+                    vars['mod2'].set(mod2)
+                    vars['key'].set(key)
+                    vars['display'].set(default_shortcut)
+            
+            # 更新配置文件
+            config_data = self.config_manager.data
+            config_data['shortcuts'] = self.shortcuts
+            self.config_manager.save(config_data)
+            
+            # 通知主窗口更新键盘钩子
+            if hasattr(self.parent, 'update_keyboard_hooks'):
+                self.parent.update_keyboard_hooks()
+            
+            # messagebox.showinfo("成功", "已恢复默认快捷键设置")
+        
+        except Exception as e:
+            print(f"恢复默认快捷键时出错: {str(e)}")
+            messagebox.showerror("错误", f"恢复默认快捷键时出错: {str(e)}")
