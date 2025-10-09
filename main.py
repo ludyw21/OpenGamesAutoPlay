@@ -43,7 +43,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # 在主程序中添加或更新版本号
-VERSION = "1.0.3"
+VERSION = "1.0.0"
 
 class Config:
     def __init__(self, filename="config.json"):
@@ -93,7 +93,7 @@ def handle_error(func_name):
 class MainWindow:
     def __init__(self, root):
         self.root = root
-        self.root.title(f"燕云-自动演奏by木木睡没-{VERSION}")
+        self.root.title(f"开放世界-自动演奏by深瞳潜入梦-{VERSION}")
         
         # 获取DPI缩放比例
         dpi_scale = 1.0

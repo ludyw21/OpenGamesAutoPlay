@@ -1,15 +1,15 @@
-# 燕云自动演奏工具
+# 开放世界自动演奏工具
 
-这是一个用于自动演奏MIDI文件的工具，专门为《燕云十六声》游戏设计。
+这是一个用于自动演奏MIDI文件的工具，开放世界游戏通用。
 
 ## 功能特点
 
-- 支持 36 键模式
+- 支持 任意 键模式（最大88键）
+- 支持 自定义按键设置
 - 支持 MIDI 文件播放
 - 支持 MIDI 文件预览试听
-- 自动音高调整
+- 支持 移调、转位，黑键自动降调
 - 多音轨支持
-- 窗口焦点检测
 - 播放控制（播放/暂停/停止）
 - 文件夹批量加载
 - 搜索功能
@@ -18,6 +18,7 @@
 ## 系统要求
 
 - Windows 10 或更高版本
+- 支持MacOS
 - 管理员权限（用于键盘控制）
 
 ## 使用方法
@@ -48,8 +49,8 @@
 
 1. 克隆仓库：
 ```bash
-git clone https://github.com/yourusername/Auto-play.git
-cd Auto-play
+git clone https://github.com/yourusername/OpenGamesAutoPlay.git
+cd OpenGamesAutoPlay
 ```
 
 2. 安装依赖：
@@ -77,7 +78,7 @@ python main.py
 # 先打包
 python build.py
 # 运行生成的 exe 文件（需要管理员权限）
-./dist/燕云自动演奏.exe
+./dist/OpenGamesAuto-play/开放世界自动演奏_v{version}.exe
 ```
 
 ### 项目结构
@@ -100,7 +101,7 @@ python build.py
 - 配置文件包含最后访问的目录和窗口置顶状态
 
 ### 游戏设置
-- 确保游戏窗口标题为"燕云十六声"
+- 确保游戏窗口标题正确设置
 - 建议在游戏中设置合适的按键映射
 
 ## 🤝 贡献指南
@@ -132,4 +133,4 @@ python build.py
 - v1.0.2 - 2024-03-10
   - 添加窗口置顶功能
   - 优化性能和内存使用
-  - 修复已知问题 
+  - 修复已知问题
