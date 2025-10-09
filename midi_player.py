@@ -8,14 +8,10 @@ from keyboard_mapping import NOTE_TO_KEY
 from collections import defaultdict
 import weakref
 
-# 延迟导入 win32gui
+# 移除窗口检测功能，不使用win32gui
 def get_win32gui():
-    try:
-        import win32gui
-        return win32gui
-    except ImportError:
-        print("警告: 无法导入 win32gui，窗口检测功能将不可用")
-        return None
+    print("窗口检测功能已移除，将直接在当前窗口进行按键模拟")
+    return None
 
 def is_admin():
     """检查是否具有管理员权限"""
@@ -45,10 +41,6 @@ class MidiPlayer:
         self.play_thread = None
         self._pressed_keys = set()
         self._lock = threading.Lock()  # 添加锁定义
-        self.window_switch_failed_callback = None  # 回调函数
-        
-        # 线程锁
-        self._lock = threading.Lock()
         
         # 时间相关变量
         self.start_time = 0
@@ -63,14 +55,7 @@ class MidiPlayer:
         # 音高调整
         self.note_offset = 0  # 整体音高偏移量
         
-        # 目标窗口名称
-        self.target_window_name = "燕云十六声"
-        
-        # 窗口监控
-        self.window_check_interval = 0.2  # 增加到0.2秒
-        self.last_window_check = 0
-        self.last_window_state = False  # 缓存窗口状态
-        self.auto_paused = False  # 标记是否因窗口切换而暂停
+        # 移除窗口相关设置
         
         # 性能优化：缓存
         self._note_key_cache = {}  # 缓存音符到按键的映射
@@ -91,12 +76,7 @@ class MidiPlayer:
             (84, 96)   # 高音区域 C6-C7
         ]
         
-        # 添加备用窗口列表
-        self.window_titles = [
-            "燕云十六声",  # 主窗口
-            "新建文本文档",  # 备用窗口1
-        ]
-        self.current_window_index = 0  # 当前使用的窗口索引
+        # 移除窗口相关设置
 
     def get_current_time(self):
         """获取当前播放时间（秒）"""
@@ -337,76 +317,13 @@ class MidiPlayer:
         """设置要播放的音轨"""
         self.selected_track = channel
 
-    def _find_game_window(self):
-        """查找游戏窗口"""
-        try:
-            hwnd = self._win32gui.FindWindow(None, self.target_window_name)
-            if hwnd:
-                return hwnd
-            return None
-        except Exception as e:
-            print(f"查找窗口时出错: {str(e)}")
-            return None
-
     def _switch_to_game_window(self):
-        """切换到游戏窗口，使用模糊匹配"""
-        try:
-            def enum_windows_callback(hwnd, window_list):
-                title = self._win32gui.GetWindowText(hwnd)
-                # 对每个目标标题进行模糊匹配
-                for target_title in self.window_titles:
-                    if target_title.lower() in title.lower():
-                        window_list.append((hwnd, title, target_title))
-                return True
-                
-            window_list = []
-            self._win32gui.EnumWindows(enum_windows_callback, window_list)
-            
-            if not window_list:
-                print("未找到任何匹配的游戏窗口")
-                if self.window_switch_failed_callback:
-                    self.window_switch_failed_callback()  # 调用回调函数
-                self.playing = False  # 停止播放
-                return False
-                
-            # 尝试切换到当前选择的窗口
-            current_title = self.window_titles[self.current_window_index]
-            for hwnd, title, matched_title in window_list:
-                if matched_title == current_title:
-                    try:
-                        self._win32gui.SetForegroundWindow(hwnd)
-                        self.target_window_name = title  # 更新为实际的窗口标题
-                        return True
-                    except Exception as e:
-                        print(f"切换到窗口 {title} 失败: {str(e)}")
-            
-            # 如果当前选择的窗口不可用，尝试其他窗口
-            for hwnd, title, matched_title in window_list:
-                try:
-                    self._win32gui.SetForegroundWindow(hwnd)
-                    self.current_window_index = self.window_titles.index(matched_title)
-                    self.target_window_name = title
-                    return True
-                except Exception as e:
-                    print(f"切换到窗口 {title} 失败: {str(e)}")
-                    continue
-                
-            # 如果所有窗口都切换失败
-            print("所有目标窗口都无法切换")
-            if self.window_switch_failed_callback:
-                self.window_switch_failed_callback()  # 调用回调函数
-            self.playing = False  # 停止播放
-            return False
-            
-        except Exception as e:
-            print(f"切换到游戏窗口时出错: {str(e)}")
-            if self.window_switch_failed_callback:
-                self.window_switch_failed_callback()  # 调用回调函数
-            self.playing = False  # 停止播放
-            return False
+        """移除窗口切换功能，直接返回True"""
+        print("已移除窗口切换功能，将在当前窗口进行操作")
+        return True
 
     def play_file(self, midi_file):
-        """播放MIDI文件"""
+        """播放MIDI文件，5秒后直接在当前窗口进行按键模拟"""
         try:
             if not os.path.exists(midi_file):
                 print(f"文件不存在: {midi_file}")
@@ -423,17 +340,21 @@ class MidiPlayer:
                 total_time = self._calculate_total_time(mid)
                 tracks_info = self.analyze_tracks(mid)
                 
-                # 尝试切换到游戏窗口
-                if not self._switch_to_game_window():
-                    print(f"警告: 未找到游戏窗口 '{self.target_window_name}'，请确保游戏已启动")
-                    return
-                
                 # 设置新的播放状态
                 with self._lock:
                     self.current_file = midi_file
                     self._cached_mid = mid  # 在设置其他状态之前缓存MIDI文件
                     self.total_time = total_time
                     self.tracks_info = tracks_info
+                    
+                # 3秒后开始播放
+                print("将在3秒后开始播放，请确保当前窗口正确...")
+                for i in range(3, 0, -1):
+                    print(f"倒计时: {i}秒")
+                    time.sleep(1)
+                
+                # 开始播放
+                with self._lock:
                     self.playing = True
                     self.paused = False
                     self.start_time = time.time() * 1000
@@ -453,7 +374,8 @@ class MidiPlayer:
             self.stop()
 
     def _play_thread(self):
-        """MIDI播放线程"""
+        """MIDI播放线程（保留以兼容旧代码）"""
+        print("警告：_play_thread方法将被弃用，请使用play_from_events方法播放预处理的事件表")
         try:
             if not self._cached_mid:
                 print("未找到缓存的MIDI文件")
@@ -476,35 +398,16 @@ class MidiPlayer:
                     if not is_playing:
                         break
                 
-                # 检查窗口状态并处理暂停
-                current_time = time.time()
-                if current_time - last_pause_check >= 0.1:
-                    # 检查窗口状态
-                    if not self._check_active_window():
-                        if not self.auto_paused and not is_paused:
-                            print("窗口切换，自动暂停播放")
-                            with self._lock:
-                                self.paused = True
-                                self.auto_paused = True
-                            is_paused = True
-                    elif self.auto_paused and is_paused:
-                        print("窗口恢复，继续播放")
-                        with self._lock:
-                            self.paused = False
-                            self.auto_paused = False
-                        is_paused = False
-                    
-                    # 更新状态
-                    with self._lock:
-                        is_playing = self.playing
-                        is_paused = self.paused
-                        selected_track = self.selected_track
-                        if self.pause_time:
-                            pause_duration = current_time * 1000 - self.pause_time
-                            self.total_pause_time += pause_duration
-                            self.pause_time = 0
-                    
-                    last_pause_check = current_time
+                # 更新状态
+                with self._lock:
+                    is_playing = self.playing
+                    is_paused = self.paused
+                    selected_track = self.selected_track
+                    if self.pause_time:
+                        current_time = time.time()
+                        pause_duration = current_time * 1000 - self.pause_time
+                        self.total_pause_time += pause_duration
+                        self.pause_time = 0
                 
                 # 处理暂停
                 if is_paused:
@@ -533,6 +436,136 @@ class MidiPlayer:
         except Exception as e:
             print(f"播放时出错: {str(e)}")
             self.stop()
+    
+    def play_from_events(self, events, total_time=None):
+        """从预处理的事件表播放，确保包含转位、移调、黑键等预处理结果
+        
+        Args:
+            events: 预处理过的事件列表，包含note_on和note_off事件
+            total_time: 可选的总时长，不提供则自动计算
+        """
+        try:
+            if not events:
+                print("没有可播放的事件数据")
+                return
+            
+            # 设置播放状态
+            with self._lock:
+                self.playing = True
+                self.paused = False
+                self.start_time = time.time() * 1000
+                self.pause_time = 0
+                self.total_pause_time = 0
+                self._elapsed_time = 0  # 新增：用于暂停恢复计算
+                
+                # 如果没有提供总时长，从事件表中计算
+                if total_time is None and events:
+                    max_time = max(event['time'] for event in events)
+                    self.total_time = max_time
+                else:
+                    self.total_time = total_time or 0
+            
+            # 3秒后开始播放
+            print("将在3秒后开始播放，请确保当前窗口正确...")
+            for i in range(3, 0, -1):
+                print(f"倒计时: {i}秒")
+                time.sleep(1)
+            
+            # 开始播放事件表
+            self._play_from_events_thread(events)
+            
+        except Exception as e:
+            print(f"从事件表播放时出错: {str(e)}")
+            self.stop()
+    
+    def _play_from_events_thread(self, events):
+        """从事件表播放的线程"""
+        try:
+            # 按时间排序事件
+            sorted_events = sorted(events, key=lambda x: x['time'])
+            
+            # 记录开始时间
+            playback_start_time = time.time()
+            
+            # 当前活跃的音符，用于更好地管理按键状态
+            active_notes = set()
+            
+            # 处理每个事件
+            event_index = 0
+            event_count = len(sorted_events)
+            
+            while event_index < event_count:
+                # 检查播放状态
+                with self._lock:
+                    if not self.playing:
+                        break
+                    is_paused = self.paused
+                    
+                    # 处理暂停状态
+                    if is_paused:
+                        # 记录暂停时的已播放时间
+                        if playback_start_time:
+                            self._elapsed_time = time.time() - playback_start_time
+                        # 等待直到取消暂停
+                        while self.paused and self.playing:
+                            time.sleep(0.1)
+                        # 如果被停止，则退出循环
+                        if not self.playing:
+                            break
+                        # 如果被恢复播放，则增加3秒延迟
+                        print("准备恢复播放，倒计时3秒...")
+                        for i in range(3, 0, -1):
+                            print(f"{i}...")
+                            time.sleep(1)
+                        # 重新计算开始时间，保持播放进度
+                        playback_start_time = time.time() - self._elapsed_time
+                        continue
+                
+                # 获取当前时间
+                current_time = time.time() - playback_start_time
+                self._elapsed_time = current_time  # 更新已播放时间
+                
+                # 处理所有时间点之前的事件
+                while event_index < event_count:
+                    event = sorted_events[event_index]
+                    if event['time'] <= current_time:
+                        # 只处理未超限的事件
+                        if not event.get('is_over_limit', False):
+                            note = event['note']
+                            event_type = event['type']
+                            
+                            # 直接根据事件表中的note映射到按键，无需再进行调整
+                            if note in NOTE_TO_KEY:
+                                if event_type == 'note_on':
+                                    self._press_key(NOTE_TO_KEY[note])
+                                    active_notes.add(note)
+                                    print(f"按下键: {NOTE_TO_KEY[note]} (音符: {note})")
+                                elif event_type == 'note_off':
+                                    self._release_key(NOTE_TO_KEY[note])
+                                    if note in active_notes:
+                                        active_notes.remove(note)
+                                    print(f"释放键: {NOTE_TO_KEY[note]} (音符: {note})")
+                        event_index += 1
+                    else:
+                        break
+                
+                # 短暂休眠避免CPU占用过高
+                time.sleep(0.001)
+            
+            print("播放结束")
+            # 播放结束后清理
+            self.stop()
+            
+        except Exception as e:
+            print(f"从事件表播放线程出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # 确保释放所有按键
+            self._release_all_keys()
+            with self._lock:
+                self.playing = False
+                self.paused = False
 
     def pause(self):
         """统一的暂停处理"""
@@ -546,12 +579,6 @@ class MidiPlayer:
                     self._release_all_keys()  # 确保释放所有按键
                     print("暂停播放")
                 else:  # 继续播放
-                    # 切换到目标窗口
-                    if not self._switch_to_game_window():
-                        print("无法切换到目标窗口，保持暂停状态")
-                        self.paused = True
-                        return False
-                    
                     if self.pause_time:
                         self.total_pause_time += time.time() * 1000 - self.pause_time
                     self.pause_time = 0
@@ -561,24 +588,22 @@ class MidiPlayer:
             return False
 
     def resume(self):
-        """恢复播放"""
+        """恢复播放，增加3秒延迟"""
         try:
-            # 在恢复播放前检查窗口状态
-            if not self._switch_to_game_window():
-                print("无法找到目标窗口，无法恢复播放")
-                if self.window_switch_failed_callback:
-                    self.window_switch_failed_callback()  # 调用回调函数
-                return False
-            
             with self._lock:
                 if not self.playing or not self.paused:
                     return False
+                
+                # 增加3秒恢复延迟
+                print("将在3秒后恢复播放...")
+                for i in range(3, 0, -1):
+                    print(f"倒计时: {i}秒")
+                    time.sleep(1)
                 
                 self.paused = False
                 if self.pause_time:
                     self.total_pause_time += time.time() * 1000 - self.pause_time
                 self.pause_time = 0
-                self.auto_paused = False
                 return True
             
         except Exception as e:
@@ -590,7 +615,6 @@ class MidiPlayer:
         with self._lock:
             self.playing = False
             self.paused = False
-            self.auto_paused = False
             self.current_file = None
             self._release_all_keys()
             print("停止播放")
@@ -643,39 +667,22 @@ class MidiPlayer:
             return note
 
     def _check_active_window(self):
-        """检查目标窗口是否处于活动状态"""
-        try:
-            if not self._win32gui:
-                return True
-            
-            active_window = self._win32gui.GetForegroundWindow()
-            active_title = self._win32gui.GetWindowText(active_window).lower()
-            
-            # 检查当前活动窗口是否匹配任何目标窗口
-            for title in self.window_titles:
-                if title.lower() in active_title:
-                    return True
-            
-            return False
-            
-        except Exception as e:
-            print(f"检查窗口状态时出错: {str(e)}")
-            return True  # 出错时默认返回True以避免意外暂停
+        """移除窗口检查功能，始终返回True"""
+        return True
 
     def play_track(self, track_info):
-        """播放单个音轨"""
+        """播放单个音轨，直接在当前窗口进行按键模拟"""
         try:
-            last_pause_check = time.time()
             last_time = 0
             
             print("\n开始播放音轨:")
             print(f"消息总数: {len(track_info['messages'])}")
             
-            # 确保切换到目标窗口
-            if not self._switch_to_game_window():
-                print("无法切换到目标窗口，暂停播放")
-                self.pause()
-                return
+            # 5秒后开始播放
+            print("将在5秒后开始播放，请确保当前窗口正确...")
+            for i in range(5, 0, -1):
+                print(f"倒计时: {i}秒")
+                time.sleep(1)
             
             for msg in track_info['messages']:
                 if not self.playing:
@@ -686,18 +693,6 @@ class MidiPlayer:
                 if relative_time > 0:
                     time.sleep(relative_time / 1000)
                 last_time = msg.time if hasattr(msg, 'time') else last_time
-                
-                # 定期检查窗口状态
-                current_time = time.time()
-                if current_time - last_pause_check >= self.window_check_interval:
-                    window_active = self._check_active_window()
-                    last_pause_check = current_time
-                    
-                    if not window_active and not self.paused:
-                        print("\n目标窗口失去焦点，自动暂停")
-                        self.auto_paused = True
-                        self.pause()  # 使用统一的暂停处理
-                        continue
                 
                 # 处理暂停状态
                 while self.paused:
@@ -730,7 +725,9 @@ class MidiPlayer:
             self._release_all_keys()
 
     def play_midi(self, midi_file, track_index=None):
-        """播放MIDI文件"""
+        """播放MIDI文件（保留以兼容旧代码，但优先使用play_from_events）"""
+        print("警告：play_midi方法将被弃用，请使用play_from_events方法播放预处理的事件表")
+        # 保持原有逻辑以确保向后兼容
         try:
             if not os.path.exists(midi_file):
                 print(f"MIDI文件不存在: {midi_file}")

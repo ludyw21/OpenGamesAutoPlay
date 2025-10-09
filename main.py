@@ -1289,27 +1289,39 @@ class MainWindow:
             self.pause_playback()
     
     def start_playback(self):
-        """开始播放"""
+        """开始播放，使用预处理的事件表"""
         try:
             if hasattr(self, 'current_file_path') and self.current_file_path:
                 # 如果正在播放MIDI，先停止
                 if hasattr(self, 'is_playing_midi') and self.is_playing_midi:
                     self.stop_midi_playback()
                 
-                # 获取选中的音轨
-                selected_track = None
-                if hasattr(self.midi_player, 'selected_track'):
-                    selected_track = self.midi_player.selected_track
+                # 确保有事件数据，如果没有则更新
+                if not hasattr(self, 'current_events') or not self.current_events:
+                    self.update_event_data()
                 
-                # 使用play_midi方法播放
-                threading.Thread(target=self.midi_player.play_midi, 
-                               args=(self.current_file_path, selected_track), 
+                # 检查是否有有效的事件数据
+                if not self.current_events:
+                    messagebox.showerror("错误", "没有有效的事件数据，请重新加载MIDI文件")
+                    return
+                
+                # 使用新的play_from_events方法播放预处理的事件表
+                # 计算总时长
+                total_time = None
+                if self.current_events:
+                    max_time = max(event['time'] for event in self.current_events)
+                    total_time = max_time
+                
+                threading.Thread(target=self.midi_player.play_from_events, 
+                               args=(self.current_events, total_time), 
                                daemon=True).start()
                 
                 self.play_button.config(text="暂停")
                 self.stop_button.config(state=NORMAL)
         except Exception as e:
             print(f"开始播放时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
             messagebox.showerror("播放错误", f"开始播放时出错: {str(e)}")
     
     def pause_playback(self):

@@ -6,5 +6,4 @@ mido>=1.2.10 # MIDI文件处理
 pretty-midi>=0.2.10 # MIDI文件分析，提供准确的秒级时间
 pygame>=2.5.0 # 音频播放
 python-rtmidi>=1.4.9 # MIDI输入输出
-pywin32>=305
-pyinstaller>=5.13.0
+pyinstaller>=5.13.0 # 打包工具
