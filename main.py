@@ -36,6 +36,7 @@ import mido
 from pages.help_dialog import HelpDialog
 from pages.settings_dialog import SettingsDialog
 from midi_analyzer import MidiAnalyzer
+from midi_preview_wrapper import get_preview_wrapper
 
 # 忽略废弃警告
 import warnings
@@ -1348,8 +1349,34 @@ class MainWindow:
                 # 停止可能正在进行的MIDI播放
                 pygame.mixer.music.stop()
                 
-                # 开始播放MIDI文件
+                # 加载MIDI文件
                 pygame.mixer.music.load(self.current_file_path)
+                
+                # 获取MIDI文件时长
+                try:
+                    # 尝试使用pretty_midi获取更准确的时长（与midi_analyzer.py保持一致）
+                    try:
+                        import pretty_midi
+                        if pretty_midi is not None:
+                            midi_data = pretty_midi.PrettyMIDI(self.current_file_path)
+                            self.midi_total_duration = midi_data.get_end_time()
+                            print(f"[试听] 使用pretty_midi获取MIDI文件时长: {int(self.midi_total_duration // 60)}分{int(self.midi_total_duration % 60)}秒 ({self.midi_total_duration:.2f}秒)")
+                        else:
+                            raise ImportError("pretty_midi不可用")
+                    except (ImportError, Exception):
+                        # 回退到mido
+                        import mido
+                        mid = mido.MidiFile(self.current_file_path)
+                        self.midi_total_duration = mid.length
+                        print(f"[试听] 使用mido获取MIDI文件时长: {int(self.midi_total_duration // 60)}分{int(self.midi_total_duration % 60)}秒 ({self.midi_total_duration:.2f}秒)")
+                except Exception as e:
+                    print(f"[试听] 获取MIDI文件时长失败: {str(e)}")
+                    self.midi_total_duration = 0
+                
+                # 记录开始播放的时间
+                self.midi_start_time = time.time()
+                
+                # 开始播放MIDI文件
                 pygame.mixer.music.play()
                 
                 # 更新状态
@@ -1361,8 +1388,9 @@ class MainWindow:
                 self.play_button.config(state=DISABLED)
                 self.preview_button.config(state=DISABLED)
                 
-                # 定期检查播放是否结束
+                # 定期检查播放是否结束并更新时间
                 self.check_midi_playback()
+                self.update_midi_playback_time()
                 
         except Exception as e:
             print(f"播放MIDI文件时出错: {str(e)}")
@@ -1375,6 +1403,15 @@ class MainWindow:
         self.is_playing_midi = False
         # 使用ttkbootstrap的内置Primary样式
         self.midi_play_button.config(text="试听MIDI")
+        
+        # 清理MIDI播放相关的变量
+        if hasattr(self, 'midi_total_duration'):
+            delattr(self, 'midi_total_duration')
+        if hasattr(self, 'midi_start_time'):
+            delattr(self, 'midi_start_time')
+            
+        # 重置剩余时间显示
+        self.update_remaining_time_label("00:00")
         
         # 重新启用其他播放按钮
         if hasattr(self, 'current_file_path') and self.current_file_path:
@@ -1391,39 +1428,140 @@ class MainWindow:
                 # 继续检查
                 self.root.after(1000, self.check_midi_playback)
     
+    def update_midi_playback_time(self):
+        """更新MIDI播放的剩余时间"""
+        if self.is_playing_midi and hasattr(self, 'midi_total_duration') and hasattr(self, 'midi_start_time'):
+            # 计算已播放时间
+            elapsed_time = time.time() - self.midi_start_time
+            # 计算剩余时间
+            remaining_time = max(0, self.midi_total_duration - elapsed_time)
+            remaining_minutes = int(remaining_time // 60)
+            remaining_seconds = int(remaining_time % 60)
+            
+            # 更新剩余时间标签
+            remaining_time_str = f"{str(remaining_minutes).zfill(2)}:{str(remaining_seconds).zfill(2)}"
+            self.update_remaining_time_label(remaining_time_str)
+            
+            # 继续更新
+            self.root.after(500, self.update_midi_playback_time)
+    
     def toggle_preview(self):
         """切换预览状态"""
         if not self.is_previewing:
             # 如果正在播放MIDI，先停止
             if hasattr(self, 'is_playing_midi') and self.is_playing_midi:
                 self.stop_midi_playback()
-            self.start_preview()
+            
+            # 确保有事件数据
+            if not self.current_events:
+                self.update_event_data()
+            
+            if self.current_events:
+                self.start_preview()
+            else:
+                messagebox.showinfo("提示", "请先选择MIDI文件并确保有有效事件数据")
         else:
             self.stop_preview()
     
     def start_preview(self):
         """开始预览"""
         try:
+            # 禁用试听MIDI按钮
+            if hasattr(self, 'midi_play_button'):
+                self.midi_play_button.config(state=DISABLED)
+            
             # 在单独的线程中播放预览
             self.is_previewing = True
             self.preview_button.config(text="停止预览")
             
-            # 这里可以实现预览功能，例如播放MIDI的一小部分
+            # 启动预览线程
             threading.Thread(target=self._preview_thread, daemon=True).start()
             
         except Exception as e:
             print(f"开始预览时出错: {str(e)}")
             self.is_previewing = False
             self.preview_button.config(text="预览")
+            # 重新启用试听MIDI按钮
+            if hasattr(self, 'midi_play_button'):
+                self.midi_play_button.config(state=NORMAL)
     
     def _preview_thread(self):
-        """预览线程"""
+        """预览线程：通过midi_preview模块生成临时MIDI并播放"""
+        temp_midi_path = None
         try:
-            # 简单的预览实现 - 播放前几秒
-            pass
+            # 确保有事件数据
+            print(f"调试：检查current_events - 类型: {type(self.current_events)}, 长度: {len(self.current_events)}")
+            
+            if not self.current_events:
+                print("调试：current_events为空")
+                self.root.after(0, lambda: messagebox.showinfo("提示", "请先选择MIDI文件并确保有有效事件数据"))
+                return
+            
+            # 导入并使用midi_preview_wrapper来生成临时MIDI文件
+            from midi_preview_wrapper import get_preview_wrapper
+            preview_wrapper = get_preview_wrapper()
+            
+            # 尝试获取BPM信息
+            bpm = 120  # 默认值
+            if hasattr(self, 'current_analysis_result') and self.current_analysis_result:
+                bpm = self.current_analysis_result.get('bpm', 120)
+            
+            # 调用预览包装器生成临时MIDI文件
+            temp_midi_path = preview_wrapper.generate_preview_midi(self.current_events, bpm)
+            if not temp_midi_path:
+                print("调试：生成预览MIDI文件失败")
+                self.root.after(0, lambda: messagebox.showerror("错误", "生成预览MIDI文件失败"))
+                return
+            
+            # 获取MIDI文件时长
+            duration_seconds, duration_minutes, duration_seconds_remainder = preview_wrapper.preview_generator.get_midi_duration(temp_midi_path)
+            print(f"[预览] MIDI文件时长: {duration_minutes}分{duration_seconds_remainder}秒 ({duration_seconds:.2f}秒)")
+            
+            # 播放临时MIDI文件
+            preview_wrapper.play_preview(temp_midi_path)
+            
+            # 记录开始播放的时间
+            start_time = time.time()
+            
+            # 等待播放完成，但要定期检查是否需要停止并更新剩余时间
+            while preview_wrapper.is_playing() and self.is_previewing:
+                # 计算已播放时间
+                elapsed_time = time.time() - start_time
+                # 计算剩余时间
+                remaining_time = max(0, duration_seconds - elapsed_time)
+                remaining_minutes = int(remaining_time // 60)
+                remaining_seconds = int(remaining_time % 60)
+                
+                # 更新按钮上方的剩余时间标签
+                remaining_time_str = f"{str(remaining_minutes).zfill(2)}:{str(remaining_seconds).zfill(2)}"
+                self.root.after(0, lambda time_str=remaining_time_str: 
+                               self.update_remaining_time_label(time_str))
+                
+                # 恢复按钮文本为"预览"
+                self.root.after(0, lambda: self.preview_button.config(text="预览"))
+                
+                time.sleep(0.5)  # 每0.5秒更新一次剩余时间
+            
+            # 如果仍在播放但预览已取消，停止播放
+            if preview_wrapper.is_playing():
+                preview_wrapper.stop_playback()
+                
         except Exception as e:
-            print(f"预览线程出错: {str(e)}")
+            error_msg = f"预览线程出错: {str(e)}"
+            print(error_msg)
+            self.root.after(0, lambda: messagebox.showerror("错误", error_msg))
         finally:
+            # 删除临时文件
+            if temp_midi_path and os.path.exists(temp_midi_path):
+                try:
+                    os.remove(temp_midi_path)
+                    print(f"已删除临时预览MIDI文件: {temp_midi_path}")
+                except Exception as e:
+                    print(f"删除临时文件时出错: {str(e)}")
+            
+            # 清理剩余时间显示
+            self.root.after(0, lambda: self.update_remaining_time_label("00:00"))
+                
             # 确保恢复状态
             if self.is_previewing:
                 self.root.after(0, lambda: self.preview_button.config(text="预览"))
@@ -1432,11 +1570,38 @@ class MainWindow:
     def stop_preview(self):
         """停止预览"""
         self.is_previewing = False
-        self.preview_button.config(text="预览")
+        # 确保在主线程中更新UI
+        self.root.after(0, lambda: self.preview_button.config(text="预览"))
+        self.root.after(0, lambda: self.update_remaining_time_label("00:00"))
+        
+        # 使用预览包装器清理资源和停止播放
+        try:
+            from midi_preview_wrapper import get_preview_wrapper
+            preview_wrapper = get_preview_wrapper()
+            # 首先停止播放
+            preview_wrapper.stop_playback()
+            # 然后清理所有资源
+            preview_wrapper.cleanup()
+            print("预览播放已停止并清理资源")
+        except Exception as e:
+            print(f"停止预览和清理资源时出错: {str(e)}")
         
         # 重新启用试听MIDI按钮
         if hasattr(self, 'current_file_path') and self.current_file_path and hasattr(self, 'midi_play_button'):
-            self.midi_play_button.config(state=NORMAL)
+            self.root.after(0, lambda: self.midi_play_button.config(state=NORMAL))
+            
+    def update_remaining_time_label(self, time_str):
+        """更新剩余时间标签"""
+        # 使用操作区域顶部预留的时间标签来显示剩余时间
+        self.time_label.config(text=f"剩余时间: {time_str}")
+        
+        # 清理可能存在的旧标签
+        if hasattr(self, 'remaining_time_label'):
+            try:
+                self.remaining_time_label.destroy()
+                delattr(self, 'remaining_time_label')
+            except Exception as e:
+                print(f"清理旧标签时出错: {str(e)}")
             
     def play_previous_song(self):
         """播放上一首歌曲"""
