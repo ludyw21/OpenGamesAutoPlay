@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 
 try:
     import mido
@@ -193,6 +194,7 @@ class MidiAnalyzer:
             tuple: (min_note, max_note, black_key_mode)
         """
         try:
+            # 首先尝试当前目录下的config.json
             config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'config.json')
             if os.path.exists(config_path):
                 with open(config_path, 'r', encoding='utf-8') as f:
@@ -200,13 +202,30 @@ class MidiAnalyzer:
                     if 'key_settings' in config:
                         min_note = config['key_settings'].get('min_note', MidiAnalyzer.DEFAULT_MIN_NOTE)
                         max_note = config['key_settings'].get('max_note', MidiAnalyzer.DEFAULT_MAX_NOTE)
-                        black_key_mode = config['key_settings'].get('black_key_mode', 'auto_sharp')
+                        black_key_mode = config['key_settings'].get('black_key_mode', 'support_black_key')
+                        print(f"[MidiAnalyzer] 从{config_path}读取配置: black_key_mode={black_key_mode}")
                         return min_note, max_note, black_key_mode
+            
+            # 如果当前目录没有，尝试exe文件所在目录（适用于编译后的exe）
+            if getattr(sys, 'frozen', False):
+                # 如果是编译后的exe，使用exe所在目录
+                exe_dir = os.path.dirname(sys.executable)
+                config_path = os.path.join(exe_dir, 'config.json')
+                if os.path.exists(config_path):
+                    with open(config_path, 'r', encoding='utf-8') as f:
+                        config = json.load(f)
+                        if 'key_settings' in config:
+                            min_note = config['key_settings'].get('min_note', MidiAnalyzer.DEFAULT_MIN_NOTE)
+                            max_note = config['key_settings'].get('max_note', MidiAnalyzer.DEFAULT_MAX_NOTE)
+                            black_key_mode = config['key_settings'].get('black_key_mode', 'support_black_key')
+                            print(f"[MidiAnalyzer] 从exe目录{config_path}读取配置: black_key_mode={black_key_mode}")
+                            return min_note, max_note, black_key_mode
         except Exception as e:
             print(f"获取配置时出错: {str(e)}")
         
         # 如果获取失败，返回默认值
-        return MidiAnalyzer.DEFAULT_MIN_NOTE, MidiAnalyzer.DEFAULT_MAX_NOTE, 'auto_sharp'
+        print("[MidiAnalyzer] 使用默认配置: black_key_mode=support_black_key")
+        return MidiAnalyzer.DEFAULT_MIN_NOTE, MidiAnalyzer.DEFAULT_MAX_NOTE, 'support_black_key'
     
     @staticmethod
     def get_over_limit_info(analysis_result):

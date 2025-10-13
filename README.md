@@ -1,94 +1,149 @@
 # 开放世界自动演奏工具
 
-这是一个用于自动演奏MIDI文件的工具，开放世界游戏通用。
+这是一个用于自动演奏MIDI文件的工具，专为开放世界游戏设计，支持多种游戏环境。
 
-## 功能特点
+## ✨ 功能特点
 
-- 支持 任意 键模式（最大88键）
-- 支持 自定义按键设置
-- 支持 MIDI 文件播放
-- 支持 MIDI 文件预览试听
-- 支持 移调、转位，黑键自动降调
-- 多音轨支持
-- 播放控制（播放/暂停/停止）
-- 文件夹批量加载
-- 搜索功能
-- 窗口置顶选项
+### 核心功能
+- **智能MIDI播放** - 支持任意键模式（最大88键）
+- **多音轨支持** - 可选择播放单个或多个音轨
+- **实时预览** - 支持MIDI文件预览试听
+- **智能移调优化** - 自动计算最优移调方案，减少用户操作
+- **自定义按键映射** - 灵活配置游戏按键
 
-## 系统要求
+### 播放控制
+- **播放/暂停/停止** - 完整的播放控制功能
+- **进度显示** - 实时显示剩余时间
+- **快捷键支持** - 全局快捷键控制播放
+- **窗口置顶** - 保持窗口始终可见
 
-- Windows 10 或更高版本
-- 支持MacOS
-- 管理员权限（用于键盘控制）
+### 智能分析
+- **音高分析** - 自动检测最高音和最低音
+- **超限提示** - 智能提示音符超出范围
+- **优化建议** - 基于移调+转位绝对值最小原则提供建议
 
-## 使用方法
+## 🚀 系统要求
 
-1. **下载和运行**
+- **操作系统**: Windows 10 或更高版本
+- **Python**: 3.11 或更高版本（开发模式）
+- **权限**: 管理员权限（用于键盘控制）
+
+## 📦 安装与使用
+
+### 方式一：直接运行（推荐）
+
+1. **下载最新版本**
    - 从 [Releases](../../releases) 页面下载最新版本
    - 将exe文件放在单独的文件夹中
-   - 右键点击exe文件，选择"以管理员身份运行"
 
-2. **基本操作**
-   - 选择MIDI文件夹：点击"选择MIDI文件夹"按钮
-   - 选择音轨：在右侧列表中选择要播放的音轨
-   - 播放控制：使用界面按钮或快捷键控制播放
-   - 预览试听：点击"预览"按钮可试听MIDI文件
+2. **运行程序**
+   ```bash
+   # 右键点击exe文件，选择"以管理员身份运行"
+   # 或使用命令行
+   .\开放世界自动演奏_v1.0.0.exe
+   ```
 
-3. **快捷键**
+### 方式二：开发模式
 
-   在弹奏界面
+1. **克隆仓库**
+   ```bash
+   git clone https://github.com/yourusername/OpenGamesAutoPlay.git
+   cd OpenGamesAutoPlay
+   ```
 
-   - Alt + 减号键(-) - 播放/暂停
-   - Alt + 等号键(=) - 停止播放
-   - Alt + 方向键上 - 上一首
-   - Alt + 方向键下 - 下一首
+2. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-## 开发者信息
+3. **运行程序**
+   ```bash
+   # 以管理员权限运行
+   python main.py
+   ```
 
-### 环境配置
+## 🎮 使用指南
 
-1. 克隆仓库：
-```bash
-git clone https://github.com/yourusername/OpenGamesAutoPlay.git
-cd OpenGamesAutoPlay
-```
+### 基本操作流程
 
-2. 安装依赖：
-```bash
-pip install -r requirements.txt
-```
+1. **选择MIDI文件夹**
+   - 点击"选择MIDI文件夹"按钮
+   - 选择包含MIDI文件的目录
 
-3. 修复 PyWin32（如果需要）：
-```bash
-python fix_pywin32.py
-```
+2. **选择音轨**
+   - 在右侧列表中选择要播放的音轨
+   - 支持多选音轨同时播放
 
-### 运行程序
+3. **调整设置**
+   - 设置移调（半音）和转位（八度）
+   - 查看智能优化建议
 
-有两种方式运行程序：
+4. **开始播放**
+   - 点击"播放"按钮或使用快捷键
+   - 实时查看播放进度
 
-1. 直接运行（开发模式）：
-```bash
-# 以管理员权限运行 PowerShell 或命令提示符
-python main.py
-```
+### 智能移调功能
 
-2. 打包后运行：
-```bash
-# 先打包
-python build.py
-# 运行生成的 exe 文件（需要管理员权限）
-./dist/OpenGamesAuto-play/开放世界自动演奏_v{version}.exe
-```
+程序会自动分析MIDI文件的音高范围，并提供最优移调建议：
+- **优化标准**: 移调+转位的绝对值最小
+- **优先选择**: 5、6、7三个居中移调值
+- **自动计算**: 基于-2到+2八度范围生成组合
+
+**示例**:  
+当最高音a³(93)超限50，最低音c(48)未超限时：
+- 优化前建议：移调-10，转位0（总和10）
+- 优化后建议：移调2，转位-1（总和3）
+
+### 快捷键
+
+在弹奏界面可使用以下快捷键（默认 可自定义）：
+
+| 快捷键 | 功能 | 说明 |
+|--------|------|------|
+| `Alt + -` | 播放/暂停 | 切换播放状态 |
+| `Alt + =` | 停止播放 | 停止当前播放 |
+| `Alt + ↑` | 上一首 | 切换到上一首MIDI文件 |
+| `Alt + ↓` | 下一首 | 切换到下一首MIDI文件 |
+
+## 🔧 开发者信息
 
 ### 项目结构
 
-- `main.py` - 主程序入口
-- `midi_player.py` - MIDI播放核心逻辑
-- `keyboard_mapping.py` - 键盘映射配置
-- `build.py` - 打包脚本
-- `requirements.txt` - 项目依赖
-- `icon.ico` - 程序图标
+```
+OpenGamesAutoPlay/
+├── main.py                 # 主程序入口
+├── midi_player.py          # MIDI播放核心逻辑
+├── midi_analyzer.py        # MIDI文件分析器
+├── keyboard_mapping.py     # 键盘映射配置
+├── midi_preview_wrapper.py # MIDI预览包装器
+├── build.py               # 打包脚本
+├── requirements.txt       # 项目依赖
+├── pages/                # 界面页面模块
+│   ├── settings_dialog.py # 设置对话框
+│   ├── help_dialog.py    # 帮助对话框
+│   └── event_table_dialog.py # 事件表格对话框
+└── icon.ico              # 程序图标
+```
+
+### 技术栈
+
+- **GUI框架**: ttkbootstrap (基于Tkinter的现代化界面)
+- **MIDI处理**: mido
+- **音频播放**: pygame
+- **键盘控制**: keyboard
+- **打包工具**: PyInstaller
+
+### 构建说明
+
+1. **安装依赖**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **构建可执行文件**
+   ```bash
+   python build.py
+   ```
 
 ## ⚠️ 注意事项
 
@@ -96,23 +151,36 @@ python build.py
 - 程序需要管理员权限才能正常触发键盘事件
 - 请务必以管理员身份运行程序
 
-### 配置文件
-- 程序会自动创建 `config.json` 保存配置
-- 配置文件包含最后访问的目录和窗口置顶状态
-
 ### 游戏设置
 - 确保游戏窗口标题正确设置
 - 建议在游戏中设置合适的按键映射
+- 游戏窗口需要保持在前台
+
+### 配置文件
+- 程序会自动创建 `config.json` 保存配置
+- 配置文件包含最后访问的目录、窗口置顶状态和主题设置
+
+## 🎨 界面特性
+
+### 主题支持
+- **明亮主题** - 适合白天使用
+- **暗色主题** - 适合夜间使用
+- **实时切换** - 主题更改立即生效
+
+### 响应式设计
+- **DPI适配** - 支持高DPI显示器
+- **窗口缩放** - 自适应不同屏幕尺寸
+- **布局优化** - 控件排列合理，操作便捷
 
 ## 🤝 贡献指南
 
 欢迎提交 Issue 和 Pull Request！
 
-1. Fork 本仓库
-2. 创建您的特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 打开一个 Pull Request
+1. **Fork 本仓库**
+2. **创建特性分支** (`git checkout -b feature/AmazingFeature`)
+3. **提交更改** (`git commit -m 'Add some AmazingFeature'`)
+4. **推送到分支** (`git push origin feature/AmazingFeature`)
+5. **打开 Pull Request**
 
 ## 📝 许可证
 
@@ -120,17 +188,28 @@ python build.py
 
 ## 🙏 致谢
 
-- [PyQt5](https://www.riverbankcomputing.com/software/pyqt/) - GUI框架
+- [Auto-play](https://github.com/nexply/Auto-play) - 文件读取、按键映射、基础布局等部分
+- [MeowField_AutoPiano](https://github.com/Tsundeer/MeowField_AutoPiano) - 界面风格、midi事件解析等部分
+- [ttkbootstrap](https://ttkbootstrap.readthedocs.io/) - 现代化GUI框架
 - [mido](https://mido.readthedocs.io/) - MIDI文件处理
-- [keyboard](https://github.com/boppreh/keyboard) - 键盘控制 
+- [keyboard](https://github.com/boppreh/keyboard) - 键盘控制
+- [pygame](https://www.pygame.org/) - 音频播放
+- [PyInstaller](https://www.pyinstaller.org/) - 打包工具
+## 🔄 版本历史
 
-## 版本历史
-- v1.0.3 - 2024-03-17
-  - 新增MIDI文件预览功能
-  - 优化播放控制界面
-  - 改进性能和稳定性
-  - 修复已知问题
-- v1.0.2 - 2024-03-10
-  - 添加窗口置顶功能
-  - 优化性能和内存使用
-  - 修复已知问题
+### v1.0.0 - 2025-10-09
+- **智能移调优化** - 新增移调+转位绝对值最小优化算法
+- **界面优化** - 改进主题设置界面和布局
+- **性能提升** - 优化内存使用和响应速度
+- **稳定性改进** - 修复已知问题，提升程序稳定性
+
+### 主要特性
+- 智能移调建议系统
+- 实时主题切换
+- 改进的音轨选择界面
+- 优化的快捷键支持
+- 增强的错误处理机制
+
+---
+
+**注意**: 使用前请确保已正确设置游戏按键映射，并始终以管理员权限运行程序。

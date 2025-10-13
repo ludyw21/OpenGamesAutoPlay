@@ -71,6 +71,7 @@ class Config:
         return {
             'last_directory': '',
             'stay_on_top': False,
+            'theme': 'pink',  # 默认主题
             'shortcuts': {
                 'START_PAUSE': 'alt+-',  # Alt + 减号键
                 'STOP': 'alt+=',         # Alt + 等号键
@@ -113,13 +114,14 @@ class MainWindow:
         self.root.minsize(scaled_width, scaled_height)
         self.root.resizable(True, True)  # 允许调整窗口大小
         
-        # 设置主题
-        self.style = ttkb.Style(theme="pink")
-        
         # 创建配置管理器实例
         self.config_manager = Config()
         # 从配置管理器获取配置
         self.config = self.config_manager.data
+        
+        # 设置主题
+        theme = self.config.get('theme', 'pink')
+        self.style = ttkb.Style(theme=theme)
         self.last_directory = self.config.get('last_directory', '')
         
         # 初始化stay_on_top_var（提前初始化以避免属性错误）
@@ -519,6 +521,14 @@ class MainWindow:
                 
                 print(f"已生成事件数据：{len(self.current_events)}个事件，{len(self.current_events)/2}个音符。")
                 
+                # 如果有打开的事件表对话框，通知它刷新显示
+                if hasattr(self, 'current_event_table_dialog') and self.current_event_table_dialog:
+                    try:
+                        self.current_event_table_dialog.populate_event_table()
+                        print("[DEBUG] 已通知事件表对话框刷新显示")
+                    except Exception as e:
+                        print(f"[DEBUG] 通知事件表对话框刷新时出错: {str(e)}")
+                
             except Exception as e:
                 print(f"生成事件数据时出错: {str(e)}")
                 # 如果出错，使用空列表
@@ -533,9 +543,30 @@ class MainWindow:
         if not hasattr(self, 'current_events') or not self.current_events:
             self.update_event_data()
         
-        # 传递MainWindow实例，而不仅仅是root
-        EventTableDialog(self)
-    
+        # 如果已经有打开的事件表对话框，先关闭它
+        if hasattr(self, 'current_event_table_dialog') and self.current_event_table_dialog:
+            try:
+                self.current_event_table_dialog.dialog.destroy()
+            except:
+                pass
+        
+        # 创建新的事件表对话框并保存引用
+        self.current_event_table_dialog = EventTableDialog(self)
+        
+        # 绑定窗口关闭事件，以便在对话框关闭时清除引用
+        self.current_event_table_dialog.dialog.protocol("WM_DELETE_WINDOW", self._on_event_table_close)
+
+    def _on_event_table_close(self):
+        """处理事件表对话框关闭事件"""
+        if hasattr(self, 'current_event_table_dialog') and self.current_event_table_dialog:
+            try:
+                # 先销毁对话框
+                self.current_event_table_dialog.dialog.destroy()
+            except:
+                pass
+            # 然后清除引用
+            self.current_event_table_dialog = None
+
     def show_settings(self):
         """显示设置对话框"""
         SettingsDialog(self, self.config_manager)
@@ -543,6 +574,20 @@ class MainWindow:
     def show_help(self):
         """显示帮助对话框"""
         HelpDialog(self.root)
+    
+    def update_theme(self, theme_name):
+        """立即更新应用程序主题"""
+        try:
+            # 更新样式
+            self.style.theme_use(theme_name)
+            
+            # 更新配置
+            self.config['theme'] = theme_name
+            self.config_manager.save(self.config)
+            
+            print(f"[DEBUG] 主题已更新为: {theme_name}")
+        except Exception as e:
+            print(f"[DEBUG] 更新主题时出错: {str(e)}")
     
     def setup_keyboard_hooks(self):
         """设置键盘快捷键"""
@@ -1449,45 +1494,21 @@ class MainWindow:
         max_suggestion_text = ""
         if max_over_limit:
             max_diff = config_max_note - analysis_result['max_note']
-            # 对于超出上限的情况，需要向下调整
-            if max_diff < 0:
-                # 向下调整：移调为负值，转位为0或负值
-                max_transpose_suggestion = max_diff % 12
-                max_octave_suggestion = max_diff // 12
-                # 如果移调值为正，需要调整
-                if max_transpose_suggestion > 0:
-                    max_transpose_suggestion -= 12
-                    max_octave_suggestion += 1
-            else:
-                # 对于低于下限的情况，需要向上调整
-                max_transpose_suggestion = max_diff % 12
-                max_octave_suggestion = max_diff // 12
-            
-            final_max_transpose = current_transpose + max_transpose_suggestion
-            final_max_octave = current_octave + max_octave_suggestion
-            max_suggestion_text = f"<最高音>移调{final_max_transpose}，转位{final_max_octave}"
+            # 优化建议逻辑：以移调+转位的绝对值最小为准，优先选择5、6、7
+            max_suggestions = self._optimize_transpose_suggestion(max_diff, current_transpose, current_octave)
+            if max_suggestions:
+                best_suggestion = max_suggestions[0]  # 取最优解
+                max_suggestion_text = f"<最高音>移调{best_suggestion['transpose']}，转位{best_suggestion['octave']}"
         
         # 计算最低音的建议移调和转位（只在超限时计算）
         min_suggestion_text = ""
         if min_over_limit:
             min_diff = config_min_note - analysis_result['min_note']
-            # 对于低于下限的情况，需要向上调整
-            if min_diff > 0:
-                # 向上调整：移调为正值，转位为0或正值
-                min_transpose_suggestion = min_diff % 12
-                min_octave_suggestion = min_diff // 12
-            else:
-                # 对于超出上限的情况，需要向下调整
-                min_transpose_suggestion = min_diff % 12
-                min_octave_suggestion = min_diff // 12
-                # 如果移调值为正，需要调整
-                if min_transpose_suggestion > 0:
-                    min_transpose_suggestion -= 12
-                    min_octave_suggestion += 1
-            
-            final_min_transpose = current_transpose + min_transpose_suggestion
-            final_min_octave = current_octave + min_octave_suggestion
-            min_suggestion_text = f"<最低音>移调{final_min_transpose}，转位{final_min_octave}"
+            # 优化建议逻辑：以移调+转位的绝对值最小为准，优先选择5、6、7
+            min_suggestions = self._optimize_transpose_suggestion(min_diff, current_transpose, current_octave)
+            if min_suggestions:
+                best_suggestion = min_suggestions[0]  # 取最优解
+                min_suggestion_text = f"<最低音>移调{best_suggestion['transpose']}，转位{best_suggestion['octave']}"
         
         # 构建建议文本
         suggestion_text = "建议"
@@ -1499,6 +1520,47 @@ class MainWindow:
             suggestion_text += f"{min_suggestion_text}"
         
         return suggestion_text
+    
+    def _optimize_transpose_suggestion(self, diff, current_transpose, current_octave):
+        """优化移调建议逻辑，以移调+转位的绝对值最小为准，优先选择5、6、7
+        
+        Args:
+            diff: 需要调整的音符差值
+            current_transpose: 当前移调值
+            current_octave: 当前转位值
+            
+        Returns:
+            list: 排序后的建议列表，每个元素为{'transpose': 移调值, 'octave': 转位值, 'score': 评分}
+        """
+        suggestions = []
+        
+        # 生成所有可能的移调+转位组合（-2到+2个八度）
+        for octave_shift in range(-2, 3):
+            # 计算需要的总移调量
+            total_transpose_needed = diff - (octave_shift * 12)
+            
+            # 计算最终的移调和转位值
+            final_transpose = current_transpose + total_transpose_needed
+            final_octave = current_octave + octave_shift
+            
+            # 计算评分：移调+转位的绝对值（越小越好）
+            # 优先选择5、6、7这三个居中的值
+            score = abs(final_transpose) + abs(final_octave)
+            
+            # 如果移调值在5、6、7范围内，给予额外加分（优先级更高）
+            if final_transpose in [5, 6, 7]:
+                score -= 0.5  # 给予加分，使这些值优先级更高
+            
+            suggestions.append({
+                'transpose': final_transpose,
+                'octave': final_octave,
+                'score': score
+            })
+        
+        # 按评分排序（评分越小越优先）
+        suggestions.sort(key=lambda x: x['score'])
+        
+        return suggestions
     
     def _apply_transpose_suggestion(self):
         """应用建议的移调和转位设置"""
@@ -1520,39 +1582,32 @@ class MainWindow:
         current_transpose = self.transpose_var.get()
         current_octave = self.octave_var.get()
         
-        # 计算建议值（与_calculate_transpose_suggestion相同的逻辑）
+        # 计算建议值（使用新的优化逻辑）
         analysis_result = self.current_analysis_result
         
-        # 计算最高音的建议移调和转位
-        max_diff = config_max_note - analysis_result['max_note']
-        max_octave_suggestion = max_diff // 12  # 转位值（商）
-        max_transpose_suggestion = max_diff % 12  # 移调值（余数）
+        # 检查是否超限
+        max_over_limit = analysis_result.get('is_max_over_limit', False)
+        min_over_limit = analysis_result.get('is_min_over_limit', False)
         
-        # 计算最低音的建议移调和转位
-        min_diff = config_min_note - analysis_result['min_note']
-        # 对于低于下限的情况，需要向上调整
-        if min_diff > 0:
-            # 向上调整：移调为正值，转位为0或正值
-            min_transpose_suggestion = min_diff % 12
-            min_octave_suggestion = min_diff // 12
+        # 优先应用最高音的建议（避免超出上限）
+        if max_over_limit:
+            max_diff = config_max_note - analysis_result['max_note']
+            suggestions = self._optimize_transpose_suggestion(max_diff, current_transpose, current_octave)
+            if suggestions:
+                best_suggestion = suggestions[0]
+                self.transpose_var.set(best_suggestion['transpose'])
+                self.octave_var.set(best_suggestion['octave'])
+        elif min_over_limit:
+            # 如果没有最高音超限，但最低音超限，应用最低音建议
+            min_diff = config_min_note - analysis_result['min_note']
+            suggestions = self._optimize_transpose_suggestion(min_diff, current_transpose, current_octave)
+            if suggestions:
+                best_suggestion = suggestions[0]
+                self.transpose_var.set(best_suggestion['transpose'])
+                self.octave_var.set(best_suggestion['octave'])
         else:
-            # 对于超出上限的情况，需要向下调整
-            min_transpose_suggestion = min_diff % 12
-            min_octave_suggestion = min_diff // 12
-            # 如果移调值为正，需要调整
-            if min_transpose_suggestion > 0:
-                min_transpose_suggestion -= 12
-                min_octave_suggestion += 1
-        
-        # 与当前设置叠加计算最终值
-        final_max_transpose = current_transpose + max_transpose_suggestion
-        final_max_octave = current_octave + max_octave_suggestion
-        final_min_transpose = current_transpose + min_transpose_suggestion
-        final_min_octave = current_octave + min_octave_suggestion
-        
-        # 应用最高音的建议（优先考虑最高音，避免超出上限）
-        self.transpose_var.set(final_max_transpose)
-        self.octave_var.set(final_max_octave)
+            messagebox.showinfo("提示", "没有需要调整的超限音符")
+            return
         
         # 更新显示
         self.update_analysis_info()
@@ -1560,7 +1615,7 @@ class MainWindow:
         # 重新解析事件表
         self.update_event_data()
         
-        messagebox.showinfo("提示", f"已应用建议设置：移调{final_max_transpose}，转位{final_max_octave}")
+        messagebox.showinfo("提示", f"已应用建议设置：移调{self.transpose_var.get()}，转位{self.octave_var.get()}")
     
     def _apply_max_note_suggestion(self):
         """应用最高音的建议移调和转位设置"""
@@ -1582,30 +1637,21 @@ class MainWindow:
         current_transpose = self.transpose_var.get()
         current_octave = self.octave_var.get()
         
-        # 计算最高音的建议移调和转位
+        # 计算最高音的建议移调和转位（使用新的优化逻辑）
         analysis_result = self.current_analysis_result
         max_diff = config_max_note - analysis_result['max_note']
-        # 对于超出上限的情况，需要向下调整
-        if max_diff < 0:
-            # 向下调整：移调为负值，转位为0或负值
-            max_transpose_suggestion = max_diff % 12
-            max_octave_suggestion = max_diff // 12
-            # 如果移调值为正，需要调整
-            if max_transpose_suggestion > 0:
-                max_transpose_suggestion -= 12
-                max_octave_suggestion += 1
-        else:
-            # 对于低于下限的情况，需要向上调整
-            max_transpose_suggestion = max_diff % 12
-            max_octave_suggestion = max_diff // 12
         
-        # 与当前设置叠加计算最终值
-        final_max_transpose = current_transpose + max_transpose_suggestion
-        final_max_octave = current_octave + max_octave_suggestion
+        # 检查最高音是否超限
+        if not analysis_result.get('is_max_over_limit', False):
+            messagebox.showinfo("提示", "最高音没有超限，无需调整")
+            return
         
-        # 应用最高音的建议
-        self.transpose_var.set(final_max_transpose)
-        self.octave_var.set(final_max_octave)
+        # 使用优化逻辑计算建议
+        suggestions = self._optimize_transpose_suggestion(max_diff, current_transpose, current_octave)
+        if suggestions:
+            best_suggestion = suggestions[0]
+            self.transpose_var.set(best_suggestion['transpose'])
+            self.octave_var.set(best_suggestion['octave'])
         
         # 重新解析事件表（这会重新分析MIDI文件并更新分析结果）
         self.update_event_data()
@@ -1633,19 +1679,21 @@ class MainWindow:
         current_transpose = self.transpose_var.get()
         current_octave = self.octave_var.get()
         
-        # 计算最低音的建议移调和转位
+        # 计算最低音的建议移调和转位（使用新的优化逻辑）
         analysis_result = self.current_analysis_result
         min_diff = config_min_note - analysis_result['min_note']
-        min_octave_suggestion = min_diff // 12  # 转位值（商）
-        min_transpose_suggestion = min_diff % 12  # 移调值（余数）
         
-        # 与当前设置叠加计算最终值
-        final_min_transpose = current_transpose + min_transpose_suggestion
-        final_min_octave = current_octave + min_octave_suggestion
+        # 检查最低音是否超限
+        if not analysis_result.get('is_min_over_limit', False):
+            messagebox.showinfo("提示", "最低音没有超限，无需调整")
+            return
         
-        # 应用最低音的建议
-        self.transpose_var.set(final_min_transpose)
-        self.octave_var.set(final_min_octave)
+        # 使用优化逻辑计算建议
+        suggestions = self._optimize_transpose_suggestion(min_diff, current_transpose, current_octave)
+        if suggestions:
+            best_suggestion = suggestions[0]
+            self.transpose_var.set(best_suggestion['transpose'])
+            self.octave_var.set(best_suggestion['octave'])
         
         # 重新解析事件表（这会重新分析MIDI文件并更新分析结果）
         self.update_event_data()
