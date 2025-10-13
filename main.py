@@ -1496,21 +1496,11 @@ class MainWindow:
                 
                 # 获取MIDI文件时长
                 try:
-                    # 尝试使用pretty_midi获取更准确的时长（与midi_analyzer.py保持一致）
-                    try:
-                        import pretty_midi
-                        if pretty_midi is not None:
-                            midi_data = pretty_midi.PrettyMIDI(self.current_file_path)
-                            self.midi_total_duration = midi_data.get_end_time()
-                            print(f"[试听] 使用pretty_midi获取MIDI文件时长: {int(self.midi_total_duration // 60)}分{int(self.midi_total_duration % 60)}秒 ({self.midi_total_duration:.2f}秒)")
-                        else:
-                            raise ImportError("pretty_midi不可用")
-                    except (ImportError, Exception):
-                        # 回退到mido
-                        import mido
-                        mid = mido.MidiFile(self.current_file_path)
-                        self.midi_total_duration = mid.length
-                        print(f"[试听] 使用mido获取MIDI文件时长: {int(self.midi_total_duration // 60)}分{int(self.midi_total_duration % 60)}秒 ({self.midi_total_duration:.2f}秒)")
+                    # 使用mido库获取MIDI文件时长
+                    import mido
+                    mid = mido.MidiFile(self.current_file_path)
+                    self.midi_total_duration = mid.length
+                    print(f"[试听] 使用mido获取MIDI文件时长: {int(self.midi_total_duration // 60)}分{int(self.midi_total_duration % 60)}秒 ({self.midi_total_duration:.2f}秒)")
                 except Exception as e:
                     print(f"[试听] 获取MIDI文件时长失败: {str(e)}")
                     self.midi_total_duration = 0
