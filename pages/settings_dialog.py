@@ -66,6 +66,9 @@ class SettingsDialog:
         # 创建快捷键设置标签页
         self.create_shortcut_settings_tab()
         
+        # 创建主题设置标签页
+        self.create_theme_settings_tab()
+        
         # 创建按钮区域
         self.create_button_area()
     
@@ -542,6 +545,72 @@ class SettingsDialog:
         restore_button = ttk.Button(restore_frame, text="恢复默认", command=self.restore_default_shortcuts)
         restore_button.pack(side=RIGHT, padx=10, pady=5)
     
+    def create_theme_settings_tab(self):
+        """创建主题设置标签页"""
+        theme_frame = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(theme_frame, text="主题设置")
+        
+        # 主题名称映射（英文值:中文显示名）
+        theme_names = {
+            'pink': '少女粉',
+            'flatly': '扁平化',
+            'cosmo': '宇宙蓝',
+            'sandstone': '岩灰蓝',
+            'darkly': '暗黑',
+            'superhero': '超级英雄',
+            'cyborg': '赛博朋克',
+            'solar': '太阳色',
+            'litera': '文献风格'  # 兼容旧配置
+        }
+        
+        # 从配置加载主题设置
+        current_theme = self.config_manager.data.get('theme', 'pink')
+        
+        # 主题选择变量
+        self.theme_var = tk.StringVar(value=current_theme)
+        
+        # 当前主题显示区域 - 放在最上方
+        current_theme_frame = ttk.LabelFrame(theme_frame, text="当前主题")
+        current_theme_frame.pack(fill=X, padx=5, pady=5)
+        
+        # 当前主题文本
+        current_theme_text = ttk.Label(current_theme_frame, text=f"当前选择: {theme_names[current_theme]}")
+        current_theme_text.pack(pady=10)
+        
+        # 保存当前主题文本引用和主题名称映射
+        self.current_theme_text = current_theme_text
+        self.theme_names = theme_names
+        
+        # 明亮主题组
+        light_frame = ttk.LabelFrame(theme_frame, text="明亮主题")
+        light_frame.pack(fill=X, padx=5, pady=5)
+        
+        light_themes = ['pink', 'flatly', 'cosmo', 'sandstone']
+        
+        # 创建明亮主题单选按钮 - 一行显示所有选项
+        for i, theme in enumerate(light_themes):
+            ttk.Radiobutton(light_frame, text=theme_names[theme], variable=self.theme_var, 
+                           value=theme, command=self.on_theme_changed).grid(
+                row=0, column=i, padx=10, pady=5, sticky=W)
+        
+        # 暗色主题组
+        dark_frame = ttk.LabelFrame(theme_frame, text="暗色主题")
+        dark_frame.pack(fill=X, padx=5, pady=5)
+        
+        dark_themes = ['darkly', 'superhero', 'cyborg', 'solar']
+        
+        # 创建暗色主题单选按钮 - 一行显示所有选项
+        for i, theme in enumerate(dark_themes):
+            ttk.Radiobutton(dark_frame, text=theme_names[theme], variable=self.theme_var, 
+                           value=theme, command=self.on_theme_changed).grid(
+                row=0, column=i, padx=10, pady=5, sticky=W)
+    
+    def on_theme_changed(self):
+        """主题选择改变时的回调"""
+        selected_theme = self.theme_var.get()
+        if hasattr(self, 'current_theme_text') and hasattr(self, 'theme_names'):
+            self.current_theme_text.config(text=f"当前选择: {self.theme_names[selected_theme]}")
+    
     def create_shortcut_setting(self, parent, label_text, action_type):
         """创建单个快捷键设置行"""
         # 创建主框架
@@ -674,8 +743,6 @@ class SettingsDialog:
         button_frame = ttk.Frame(self.dialog)
         button_frame.pack(fill=X, padx=10, pady=10)
         
-
-        
         # 取消按钮
         cancel_button = ttk.Button(button_frame, text="取消", command=self.cancel)
         cancel_button.pack(side=RIGHT, padx=5)
@@ -762,6 +829,10 @@ class SettingsDialog:
         config_data['shortcuts'] = self.shortcuts
         config_data['key_settings'] = key_settings
         
+        # 保存主题设置
+        if hasattr(self, 'theme_var'):
+            config_data['theme'] = self.theme_var.get()
+        
         # 保存配置
         self.config_manager.save(config_data)
         
@@ -776,6 +847,19 @@ class SettingsDialog:
             self.parent.update_analysis_frame_title()
         else:
             print("[DEBUG] update_analysis_frame_title方法不存在")
+        
+        # 通知主窗口重新生成事件表（如果当前有选中的音轨）
+        if hasattr(self.parent, 'update_event_data'):
+            print("[DEBUG] 调用update_event_data方法重新生成事件表")
+            self.parent.update_event_data()
+        else:
+            print("[DEBUG] update_event_data方法不存在")
+        
+        # 通知主窗口更新主题（立即生效）
+        if hasattr(self, 'theme_var') and hasattr(self.parent, 'update_theme'):
+            selected_theme = self.theme_var.get()
+            print(f"[DEBUG] 调用update_theme方法，主题: {selected_theme}")
+            self.parent.update_theme(selected_theme)
         
         # 显示成功消息
         # messagebox.showinfo("成功", "设置已保存")
