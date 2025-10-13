@@ -892,125 +892,72 @@ class MainWindow:
             self.start_midi_playback()
     
     def _fix_mojibake(self, text):
-        """修复已被错误解码的字符串（ mojibake ）"""
-        if not isinstance(text, str):
+        """修复已被错误解码的字符串（ mojibake ）- 优化版本"""
+        if not isinstance(text, str) or not text:
+            return text
+        
+        # 快速检查：如果文本不包含可能乱码的字符，直接返回
+        if not any(192 <= ord(c) <= 255 for c in text):
             return text
         
         # 记录原始文本用于调试
         original_text = text
         
-        # 尝试检测常见的错误解码模式并修复
+        # 优化：优先尝试最常见的几种编码修复，减少不必要的尝试
         try:
-            # 1. 首先尝试处理UTF-8被错误解码为Latin-1的情况（例如"æ— æ‡é¢˜" -> "无标题"）
-            # 这种模式常见于UTF-8文本被错误解码为Latin-1/ISO-8859-1
+            # 1. 首先尝试最常见的UTF-8被错误解码为Latin-1的情况
+            # 这种模式最常见，成功率最高
             try:
-                # 对于包含UTF-8特征字符的字符串，优先尝试这种修复
-                if any(192 <= ord(c) <= 255 for c in text):
-                    # 使用errors='replace'来避免编码错误
-                    utf8_fixed = text.encode('latin-1', errors='replace').decode('utf-8', errors='replace')
-                    # 检查是否有中文字符（表示可能修复成功）
-                    if any('\u4e00' <= c <= '\u9fff' for c in utf8_fixed):
-                        # print(f"UTF-8修复成功: {original_text} -> {utf8_fixed}")
-                        return utf8_fixed
-            except Exception as e:
-                print(f"UTF-8修复失败: {e}")
+                utf8_fixed = text.encode('latin-1', errors='replace').decode('utf-8', errors='replace')
+                # 检查是否有中文字符且结果不同（表示修复成功）
+                if any('\u4e00' <= c <= '\u9fff' for c in utf8_fixed) and utf8_fixed != text:
+                    return utf8_fixed
+            except Exception:
+                pass
             
-            # 2. 尝试使用cp1252作为中间编码（Windows常用的Latin-1扩展）
+            # 2. 尝试GBK编码修复（中文环境常见）
             try:
-                if any(192 <= ord(c) <= 255 for c in text):
-                    # 先转换为cp1252字节，再尝试UTF-8解码
-                    cp1252_fixed = text.encode('cp1252', errors='replace').decode('utf-8', errors='replace')
-                    if any('\u4e00' <= c <= '\u9fff' for c in cp1252_fixed):
-                        # print(f"CP1252修复成功: {original_text} -> {cp1252_fixed}")
-                        return cp1252_fixed
-            except Exception as e:
-                print(f"CP1252修复失败: {e}")
-            
-            # 3. 尝试ISO-8859-1 -> GBK转换（常见的中文乱码模式）
-            try:
-                # 使用errors='replace'确保即使有特殊字符也能继续
                 gbk_fixed = text.encode('latin-1', errors='replace').decode('gbk', errors='replace')
-                if any('\u4e00' <= c <= '\u9fff' for c in gbk_fixed):
-                        # print(f"GBK修复成功: {original_text} -> {gbk_fixed}")
-                        return gbk_fixed
-            except Exception as e:
-                print(f"GBK修复失败: {e}")
+                if any('\u4e00' <= c <= '\u9fff' for c in gbk_fixed) and gbk_fixed != text:
+                    return gbk_fixed
+            except Exception:
+                pass
             
-            # 4. 尝试ISO-8859-1 -> GB2312转换
+            # 3. 尝试cp1252 -> UTF-8（Windows环境常见）
             try:
-                gb2312_fixed = text.encode('latin-1', errors='replace').decode('gb2312', errors='replace')
-                if any('\u4e00' <= c <= '\u9fff' for c in gb2312_fixed):
-                        # print(f"GB2312修复成功: {original_text} -> {gb2312_fixed}")
-                        return gb2312_fixed
-            except Exception as e:
-                print(f"GB2312修复失败: {e}")
+                cp1252_fixed = text.encode('cp1252', errors='replace').decode('utf-8', errors='replace')
+                if any('\u4e00' <= c <= '\u9fff' for c in cp1252_fixed) and cp1252_fixed != text:
+                    return cp1252_fixed
+            except Exception:
+                pass
             
-            # 5. 尝试ISO-8859-1 -> GB18030转换（支持更多字符）
+            # 4. 如果以上都失败，尝试GB18030（支持更多字符）
             try:
                 gb18030_fixed = text.encode('latin-1', errors='replace').decode('gb18030', errors='replace')
-                if any('\u4e00' <= c <= '\u9fff' for c in gb18030_fixed):
-                        # print(f"GB18030修复成功: {original_text} -> {gb18030_fixed}")
-                        return gb18030_fixed
-            except Exception as e:
-                print(f"GB18030修复失败: {e}")
+                if any('\u4e00' <= c <= '\u9fff' for c in gb18030_fixed) and gb18030_fixed != text:
+                    return gb18030_fixed
+            except Exception:
+                pass
             
-            # 6. 尝试多种编码组合的复杂转换
+            # 5. 最后尝试直接UTF-8解码（针对特殊情况）
             try:
-                if any(192 <= ord(c) <= 255 for c in text):
-                    # 尝试多种编码组合
-                    for encoding1 in ['latin-1', 'cp1252']:
-                        for encoding2 in ['utf-8', 'gbk', 'gb18030']:
-                            try:
-                                # 先转换为bytes再尝试其他编码
-                                combined_fixed = text.encode(encoding1, errors='replace').decode(encoding2, errors='replace')
-                                if any('\u4e00' <= c <= '\u9fff' for c in combined_fixed) and combined_fixed != text:
-                                    # print(f"组合修复成功 ({encoding1}->{encoding2}): {original_text} -> {combined_fixed}")
-                                    return combined_fixed
-                            except Exception:
-                                continue
-            except Exception as e:
-                print(f"组合修复失败: {e}")
-            
-            # 7. 尝试更复杂的三重编码修复
-            try:
-                if any(192 <= ord(c) <= 255 for c in text):
-                    # 先Latin-1 -> GBK -> UTF-8的三重转换
-                    triple_fixed = text.encode('latin-1', errors='replace').decode('gbk', errors='replace').encode('utf-8', errors='replace').decode('utf-8', errors='replace')
-                    if any('\u4e00' <= c <= '\u9fff' for c in triple_fixed) and triple_fixed != text:
-                        # print(f"三重修复成功: {original_text} -> {triple_fixed}")
-                        return triple_fixed
-            except Exception as e:
-                print(f"三重修复失败: {e}")
-                
-            # 8. 针对特殊情况：检测是否是典型的UTF-8编码错误模式
-            try:
-                # 检查是否包含连续的UTF-8特征字节模式
+                # 检查是否包含UTF-8特征字节模式
                 if any(0xC0 <= ord(c) <= 0xDF for c in text) or any(0xE0 <= ord(c) <= 0xEF for c in text):
-                    # 这可能是UTF-8被错误解码
-                    # 使用原始字节重新解码
-                    try:
-                        # 获取原始字节表示，然后尝试正确解码
-                        raw_bytes = ''.join(chr(ord(c)) for c in text).encode('latin-1', errors='replace')
-                        utf8_direct = raw_bytes.decode('utf-8', errors='replace')
-                        if any('\u4e00' <= c <= '\u9fff' for c in utf8_direct) and utf8_direct != text:
-                            # print(f"直接UTF-8解码修复: {original_text} -> {utf8_direct}")
-                            return utf8_direct
-                    except Exception:
-                        pass
-            except Exception as e:
-                print(f"特征检测修复失败: {e}")
+                    raw_bytes = ''.join(chr(ord(c)) for c in text).encode('latin-1', errors='replace')
+                    utf8_direct = raw_bytes.decode('utf-8', errors='replace')
+                    if any('\u4e00' <= c <= '\u9fff' for c in utf8_direct) and utf8_direct != text:
+                        return utf8_direct
+            except Exception:
+                pass
                 
-        except Exception as e:
-            print(f"乱码修复过程出错: {e}")
+        except Exception:
+            pass  # 静默处理异常，避免影响性能
         
-        # 如果所有修复都失败，记录未修复的文本
-        if any(192 <= ord(c) <= 255 for c in text):
-            print(f"未能修复的乱码: {original_text}")
-        
+        # 如果所有修复都失败，返回原始文本
         return text
     
     def _load_midi_tracks(self, file_path):
-        """加载MIDI文件的音轨信息"""
+        """加载MIDI文件的音轨信息 - 优化版本"""
         try:
             # 清空当前音轨列表
             for item in self.tracks_list.get_children():
@@ -1019,85 +966,157 @@ class MainWindow:
             # 清空选中的音轨集合
             self.selected_tracks.clear()
             
+            # 显示加载状态
+            loading_label = self.tracks_list.insert('', END, values=["", "正在加载MIDI文件..."])
+            self.root.update()
+            
             # 解析MIDI文件 - 使用更安全的编码处理方式
             import mido
-            # print(f"正在加载MIDI文件: {file_path}")
-            # 先尝试使用二进制模式打开，然后使用不同编码方案尝试解析
-            try:
-                mid = mido.MidiFile(file_path, charset='utf-8')  # 优先尝试UTF-8
-            except UnicodeDecodeError:
+            import threading
+            import time
+            
+            def parse_midi_in_thread():
+                """在线程中解析MIDI文件，避免UI冻结"""
+                start_time = time.time()
+                
                 try:
-                    mid = mido.MidiFile(file_path, charset='cp1252')  # 尝试cp1252
-                except UnicodeDecodeError:
-                    mid = mido.MidiFile(file_path, charset='cp932')  # 最后尝试日文编码
+                    # 先尝试使用二进制模式打开，然后使用不同编码方案尝试解析
+                    try:
+                        mid = mido.MidiFile(file_path, charset='utf-8')  # 优先尝试UTF-8
+                    except UnicodeDecodeError:
+                        try:
+                            mid = mido.MidiFile(file_path, charset='cp1252')  # 尝试cp1252
+                        except UnicodeDecodeError:
+                            mid = mido.MidiFile(file_path, charset='cp932')  # 最后尝试日文编码
+                    
+                    # 初始化音轨信息列表
+                    tracks_info = []
+                    selected_tracks = set()
+                    
+                    # 添加音轨信息 - 优化解析逻辑
+                    for i, track in enumerate(mid.tracks):
+                        # 优化1: 快速预扫描音轨，避免完整遍历
+                        note_count = 0
+                        original_name = None
+                        
+                        # 快速扫描前50个消息来获取基本信息
+                        for j, msg in enumerate(track):
+                            if j >= 50:  # 只扫描前50个消息
+                                break
+                            
+                            if msg.type == 'note_on' and msg.velocity > 0:
+                                note_count += 1
+                            elif msg.type == 'track_name' and msg.name:
+                                original_name = msg.name
+                                break
+                        
+                        # 优化2: 如果前50个消息中音符很少，再完整统计
+                        if note_count < 5:
+                            # 使用更高效的统计方法
+                            note_count = sum(1 for msg in track if hasattr(msg, 'type') and msg.type == 'note_on' and hasattr(msg, 'velocity') and msg.velocity > 0)
+                        
+                        # 过滤掉音符数量过少的音轨
+                        if note_count < 10:
+                            continue
+                        
+                        # 优化3: 如果没有找到名称，再完整扫描，但限制扫描数量
+                        if original_name is None:
+                            # 最多扫描前200个消息寻找音轨名称
+                            for j, msg in enumerate(track):
+                                if j >= 200:
+                                    break
+                                if msg.type == 'track_name' and msg.name:
+                                    original_name = msg.name
+                                    break
+                        
+                        # 使用专门的乱码修复方法处理音轨名称
+                        fixed_name = self._fix_mojibake(original_name) if original_name else f"未命名"
+                        
+                        # 构建显示名称，添加音轨标号
+                        display_name = f"音轨{i+1}：{fixed_name} ({note_count}个音符)"
+                        
+                        tracks_info.append({
+                            "track_index": i, 
+                            "note_count": note_count, 
+                            "display_name": display_name,
+                            "original_name": original_name,
+                            "fixed_name": fixed_name
+                        })
+                        selected_tracks.add(i)
+                    
+                    # 在主线程中更新UI
+                    def update_ui():
+                        # 移除加载状态
+                        self.tracks_list.delete(loading_label)
+                        
+                        # 先添加"全部音轨"项作为全选/反选控制
+                        self.all_tracks_item = self.tracks_list.insert('', END, values=["✓", "全部音轨"], tags="all_tracks")
+                        # 默认全选时给"全部音轨"项也添加高亮
+                        self.tracks_list.selection_add(self.all_tracks_item)
+                        
+                        # 添加音轨信息
+                        self.tracks_info = []
+                        for info in tracks_info:
+                            # 添加到Treeview，默认选中（显示✓）
+                            checkbox = "✓"  # 默认选中
+                            item = self.tracks_list.insert('', END, values=[checkbox, info["display_name"]], tags=(info["track_index"],))
+                            
+                            # 存储音轨信息
+                            self.tracks_info.append({
+                                "track_index": info["track_index"], 
+                                "note_count": info["note_count"], 
+                                "item_id": item
+                            })
+                            
+                            # 默认全选并选中行（高亮）
+                            self.tracks_list.selection_add(item)
+                        
+                        self.selected_tracks = selected_tracks
+                        
+                        # 保存MIDI文件路径
+                        self.current_file_path = file_path
+                        # 重置当前分析结果，避免使用旧的分析结果
+                        self.current_analysis_result = None
+                        
+                        elapsed_time = time.time() - start_time
+                        print(f"成功加载MIDI文件：{file_path}，共找到{len(self.tracks_info)}个有效音轨，耗时{elapsed_time:.2f}秒")
+                        
+                        # 音轨已默认全选，立即生成事件数据
+                        self.update_event_data()
+                        
+                        # 更新分析信息显示
+                        self.update_analysis_info()
+                            
+                        # 启用试听MIDI按钮
+                        if hasattr(self, 'midi_play_button'):
+                            self.midi_play_button.config(state=NORMAL)
+                        
+                        # 初始化按钮状态：播放按钮亮，暂停按钮灰
+                        if hasattr(self, 'play_button'):
+                            self.play_button.config(state=NORMAL)
+                        if hasattr(self, 'stop_button'):
+                            self.stop_button.config(state=DISABLED)
+                    
+                    # 在主线程中执行UI更新
+                    self.root.after(0, update_ui)
+                    
+                except Exception as e:
+                    # 在主线程中显示错误
+                    def show_error():
+                        self.tracks_list.delete(loading_label)
+                        print(f"加载MIDI文件时出错: {str(e)}")
+                        messagebox.showerror("MIDI错误", f"加载MIDI文件时出错: {str(e)}")
+                    
+                    self.root.after(0, show_error)
             
-            # 初始化音轨信息列表
-            self.tracks_info = []
-            
-            # 先添加"全部音轨"项作为全选/反选控制
-            self.all_tracks_item = self.tracks_list.insert('', END, values=["✓", "全部音轨"], tags="all_tracks")
-            # 默认全选时给"全部音轨"项也添加高亮
-            self.tracks_list.selection_add(self.all_tracks_item)
-            
-            # 添加音轨信息
-            for i, track in enumerate(mid.tracks):
-                # 统计音符数量
-                note_count = sum(1 for msg in track if msg.type == 'note_on' and msg.velocity > 0)
-                
-                # 过滤掉音符数量过少的音轨
-                if note_count < 10:
-                    continue
-                
-                # 尝试从音轨中提取名称
-                original_name = None
-                for msg in track:
-                    if msg.type == 'track_name' and msg.name:
-                        original_name = msg.name
-                        break
-                
-                # 使用专门的乱码修复方法处理音轨名称
-                fixed_name = self._fix_mojibake(original_name) if original_name else f"未命名"
-                # print(f"音轨{i+1} - 原始名称: {original_name}, 修复后: {fixed_name}")
-                
-                # 构建显示名称，添加音轨标号
-                display_name = f"音轨{i+1}：{fixed_name} ({note_count}个音符)"
-                
-                # 添加到Treeview，默认选中（显示✓）
-                checkbox = "✓"  # 默认选中
-                item = self.tracks_list.insert('', END, values=[checkbox, display_name], tags=(i,))
-                
-                # 存储音轨信息
-                self.tracks_info.append({"track_index": i, "note_count": note_count, "item_id": item})
-                
-                # 默认全选并选中行（高亮）
-                self.selected_tracks.add(i)
-                self.tracks_list.selection_add(item)
-            
-            # 保存MIDI文件路径
-            self.current_file_path = file_path
-            # 重置当前分析结果，避免使用旧的分析结果
-            self.current_analysis_result = None
-            # print(f"成功加载MIDI文件：{file_path}，共找到{len(self.tracks_info)}个有效音轨")
-            
-            # 音轨已默认全选，立即生成事件数据
-            self.update_event_data()
-            
-            # 更新分析信息显示
-            self.update_analysis_info()
-                
-            # 启用试听MIDI按钮
-            if hasattr(self, 'midi_play_button'):
-                self.midi_play_button.config(state=NORMAL)
-            
-            # 初始化按钮状态：播放按钮亮，暂停按钮灰
-            if hasattr(self, 'play_button'):
-                self.play_button.config(state=NORMAL)
-            if hasattr(self, 'stop_button'):
-                self.stop_button.config(state=DISABLED)
+            # 启动解析线程
+            thread = threading.Thread(target=parse_midi_in_thread)
+            thread.daemon = True
+            thread.start()
             
         except Exception as e:
-            print(f"加载MIDI文件时出错: {str(e)}")
-            messagebox.showerror("MIDI错误", f"加载MIDI文件时出错: {str(e)}")
+            print(f"启动MIDI解析线程时出错: {str(e)}")
+            messagebox.showerror("MIDI错误", f"启动MIDI解析线程时出错: {str(e)}")
     
     def track_selected(self, event=None):
         """选择音轨时的处理"""
