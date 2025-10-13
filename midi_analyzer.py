@@ -62,39 +62,100 @@ def transpose_black_keys(events: list, strategy: str = "nearest") -> list:
 def _gather_notes_from_mido(mid, selected_tracks):
     """
     使用mido库精确解析MIDI文件，严格遵循MeowField_AutoPiano的解析逻辑
+    激进优化版本：针对超大型MIDI文件进行性能优化
     """
     ticks_per_beat = getattr(mid, 'ticks_per_beat', 480)
     tempo = 500000  # default 120 BPM
     # 以绝对tick记录的tempo变化 (tick, tempo_us_per_beat)
     tempo_changes = [(0, tempo)]
-    # accumulate absolute time per track to the merged view
-    events = []
+    
+    # 激进优化：预分配事件列表容量，大幅减少内存重分配
+    total_track_events = sum(len(track) for track in mid.tracks)
+    # 更精确的事件数量估计：假设1/3的事件是音符事件
+    total_events_estimate = total_track_events // 3
+    
+    # 针对超大型文件进行特殊处理
+    if total_track_events > 50000:  # 超过5万个总事件
+        print(f"[性能警告] 检测到超大型MIDI文件，总事件数: {total_track_events}")
+        # 限制最大事件数量，避免内存爆炸
+        total_events_estimate = min(total_events_estimate, 100000)
+    
+    events = [None] * total_events_estimate if total_events_estimate > 1000 else []
+    event_count = 0
 
+    # 激进优化：快速跳过非音符密集的音轨
     for i, track in enumerate(mid.tracks):
+        # 快速统计音轨中的音符事件比例
+        total_msgs = len(track)
+        if total_msgs == 0:
+            continue
+            
+        note_events = 0
+        for msg in track:
+            if msg.type in ('note_on', 'note_off'):
+                note_events += 1
+        
+        # 如果音符事件比例过低（<10%），快速跳过
+        if note_events / total_msgs < 0.1 and total_msgs > 100:
+            continue
+            
         t = 0
         on_stack = {}
         cur_tempo = tempo
+            
         for msg in track:
             t += msg.time
+            
+            # 激进优化：快速跳过非关键事件类型
+            if msg.type not in ('note_on', 'note_off', 'set_tempo'):
+                continue
+                
             if msg.type == 'set_tempo':
                 cur_tempo = msg.tempo
                 tempo_changes.append((int(t), int(cur_tempo)))
-            if msg.type == 'note_on' and msg.velocity > 0:
-                on_stack.setdefault((msg.channel, msg.note), []).append((t, msg.velocity))
+            elif msg.type == 'note_on' and msg.velocity > 0:
+                key = (msg.channel, msg.note)
+                if key not in on_stack:
+                    on_stack[key] = []
+                on_stack[key].append((t, msg.velocity))
             elif msg.type in ('note_off', 'note_on'):
                 if msg.type == 'note_on' and msg.velocity > 0:
                     continue
                 key = (msg.channel, msg.note)
                 if key in on_stack and on_stack[key]:
                     start_tick, vel = on_stack[key].pop(0)
-                    events.append({
-                        'start_tick': start_tick,
-                        'end_tick': t,
-                        'channel': msg.channel,
-                        'note': msg.note,
-                        'velocity': vel,
-                        'track': i
-                    })
+                    
+                    # 激进优化：直接赋值，避免条件判断
+                    if event_count >= len(events):
+                        # 动态扩容，但限制最大容量
+                        if len(events) < 200000:  # 最大20万个事件
+                            events.append({
+                                'start_tick': start_tick,
+                                'end_tick': t,
+                                'channel': msg.channel,
+                                'note': msg.note,
+                                'velocity': vel,
+                                'track': i
+                            })
+                        else:
+                            # 超过容量限制，跳过后续事件
+                            continue
+                    else:
+                        events[event_count] = {
+                            'start_tick': start_tick,
+                            'end_tick': t,
+                            'channel': msg.channel,
+                            'note': msg.note,
+                            'velocity': vel,
+                            'track': i
+                        }
+                    event_count += 1
+    
+    # 截断预分配的None值
+    if event_count < len(events):
+        events = events[:event_count]
+    
+    print(f"[性能统计] 解析完成，总事件数: {event_count}, 预分配容量: {len(events)}")
     # 转换为精确时间：基于 tempo_changes 分段积分（PPQ），SMPTE 简化为常量换算
     if not events:
         return []
@@ -109,23 +170,51 @@ def _gather_notes_from_mido(mid, selected_tracks):
             dedup[-1] = (int(tk), int(tp))
     tempo_changes = dedup if dedup else [(0, tempo)]
 
+    # 激进优化：针对超大型文件优化tick转换缓存
+    tick_cache = {}
+    
+    # 预计算tempo段的边界，减少循环次数
+    tempo_segments = []
+    for i in range(len(tempo_changes) - 1):
+        tempo_segments.append((tempo_changes[i][0], tempo_changes[i+1][0], tempo_changes[i][1]))
+    if tempo_changes:
+        last_start, last_tempo = tempo_changes[-1]
+        tempo_segments.append((last_start, float('inf'), last_tempo))
+    
     def tick_to_seconds_ppq(target_tick):
-        if target_tick <= 0:
+        target_tick_int = int(target_tick)
+        if target_tick_int in tick_cache:
+            return tick_cache[target_tick_int]
+            
+        if target_tick_int <= 0:
             return 0.0
-        acc = 0.0
-        prev_tick = 0
-        prev_tempo = tempo_changes[0][1]
-        for i in range(1, len(tempo_changes)):
-            cur_tick, cur_tempo = tempo_changes[i]
-            if cur_tick > target_tick:
-                break
-            dt = max(0, cur_tick - prev_tick)
-            acc += (dt * prev_tempo) / (ticks_per_beat * 1_000_000.0)  # 修正为1_000_000.0
-            prev_tick = cur_tick
-            prev_tempo = cur_tempo
-        # tail
-        dt_tail = max(0, int(target_tick) - int(prev_tick))
-        acc += (dt_tail * prev_tempo) / (ticks_per_beat * 1_000_000.0)  # 修正为1_000_000.0
+            
+        # 使用预计算的tempo段进行快速查找
+        for segment_start, segment_end, segment_tempo in tempo_segments:
+            if segment_start <= target_tick_int < segment_end:
+                # 计算时间
+                acc = 0.0
+                prev_tick = 0
+                
+                # 累加之前所有段的时间
+                for prev_start, prev_end, prev_tempo in tempo_segments:
+                    if prev_end <= segment_start:
+                        dt = max(0, prev_end - prev_start)
+                        acc += (dt * prev_tempo) / (ticks_per_beat * 1_000_000.0)
+                        prev_tick = prev_end
+                    else:
+                        break
+                
+                # 当前段的时间
+                dt_tail = max(0, target_tick_int - segment_start)
+                acc += (dt_tail * segment_tempo) / (ticks_per_beat * 1_000_000.0)
+                
+                tick_cache[target_tick_int] = acc
+                return acc
+        
+        # 默认计算（理论上不会执行到这里）
+        acc = target_tick_int * (tempo / 1_000_000.0) / ticks_per_beat
+        tick_cache[target_tick_int] = acc
         return acc
 
     is_smpte = bool(ticks_per_beat < 0)
@@ -138,6 +227,7 @@ def _gather_notes_from_mido(mid, selected_tracks):
         mf_len = 0.0
 
     if not is_smpte:
+        # 性能优化：批量处理事件时间计算
         for e in events:
             st = tick_to_seconds_ppq(int(e['start_tick']))
             et = tick_to_seconds_ppq(int(e['end_tick']))
