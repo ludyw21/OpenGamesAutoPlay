@@ -15,9 +15,9 @@ class SettingsDialog:
     def __init__(self, parent, config_manager):
         self.parent = parent
         self.config_manager = config_manager
-        self.dialog = ttkb.Toplevel(parent)
+        self.dialog = ttkb.Toplevel(parent.root)
         self.dialog.title("设置")
-        self.dialog.transient(parent)  # 设置为主窗口的子窗口
+        self.dialog.transient(parent.root)  # 设置为主窗口的子窗口
         self.dialog.grab_set()  # 模态窗口
         
         # 获取DPI缩放比例
@@ -35,10 +35,10 @@ class SettingsDialog:
         dialog_width = int(base_width * dpi_scale)
         dialog_height = int(base_height * dpi_scale)
         
-        parent_x = parent.winfo_x()
-        parent_y = parent.winfo_y()
-        parent_width = parent.winfo_width()
-        parent_height = parent.winfo_height()
+        parent_x = parent.root.winfo_x()
+        parent_y = parent.root.winfo_y()
+        parent_width = parent.root.winfo_width()
+        parent_height = parent.root.winfo_height()
         
         x = parent_x + (parent_width - dialog_width) // 2
         y = parent_y + (parent_height - dialog_height) // 2
@@ -767,7 +767,15 @@ class SettingsDialog:
         
         # 通知主窗口更新键盘钩子，确保快捷键立即生效
         if hasattr(self.parent, 'update_keyboard_hooks'):
+            print("[DEBUG] 调用update_keyboard_hooks方法")
             self.parent.update_keyboard_hooks()
+        
+        # 通知主窗口更新音轨分析标题
+        if hasattr(self.parent, 'update_analysis_frame_title'):
+            print("[DEBUG] 调用update_analysis_frame_title方法")
+            self.parent.update_analysis_frame_title()
+        else:
+            print("[DEBUG] update_analysis_frame_title方法不存在")
         
         # 显示成功消息
         # messagebox.showinfo("成功", "设置已保存")
@@ -837,6 +845,10 @@ class SettingsDialog:
             # 更新按键设置显示
             self.update_keyboard_settings()
             
+            # 通知主窗口更新音轨分析标题
+            if hasattr(self.parent, 'update_analysis_frame_title'):
+                self.parent.update_analysis_frame_title()
+            
             # 移除成功消息弹窗，直接刷新页面
             
         except Exception as e:
@@ -875,6 +887,10 @@ class SettingsDialog:
             # 通知主窗口更新键盘钩子
             if hasattr(self.parent, 'update_keyboard_hooks'):
                 self.parent.update_keyboard_hooks()
+            
+            # 通知主窗口更新音轨分析标题
+            if hasattr(self.parent, 'update_analysis_frame_title'):
+                self.parent.update_analysis_frame_title()
             
             # messagebox.showinfo("成功", "已恢复默认快捷键设置")
         

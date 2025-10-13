@@ -105,7 +105,7 @@ class MainWindow:
                 pass
         
         # 根据DPI缩放比例计算窗口大小，减少高度以消除底部多余空间
-        base_width, base_height = 550, 500  # 减少高度
+        base_width, base_height = 550, 520  # 减少高度
         scaled_width = int(base_width * dpi_scale)
         scaled_height = int(base_height * dpi_scale)
         
@@ -369,14 +369,35 @@ class MainWindow:
             self.octave_entry.pack(side=LEFT)
             ttk.Button(octave_control_frame, text="+", command=lambda: self.adjust_value(self.octave_var, 1), width=2).pack(side=LEFT)
             
+            # 获取配置的最低音和最高音
+            config_min_note = 48  # 默认值
+            config_max_note = 83  # 默认值
+            try:
+                from midi_analyzer import MidiAnalyzer
+                config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+            except:
+                pass
+            
+            # 导入get_note_name函数
+            try:
+                from groups import get_note_name
+            except:
+                # 如果导入失败，创建一个简单的替代函数
+                def get_note_name(note):
+                    return str(note)
+            
             # MIDI分析数据显示区域
-            analysis_frame = ttk.LabelFrame(right_frame, text="音轨分析", padding=10)
-            analysis_frame.pack(fill=X, pady=5)
+            self.analysis_frame = ttk.LabelFrame(right_frame, text=f"音轨分析 {get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note})", padding=10)
+            self.analysis_frame.pack(fill=X, pady=4)
             
             # 分析数据内容
             self.analysis_text = "选中音轨分析(含移调、音程转位) 总音符数 0\n最高音: - 未检测\n最低音: - 未检测"
-            self.analysis_label = ttk.Label(analysis_frame, text=self.analysis_text, justify=LEFT)
-            self.analysis_label.pack(fill=X, anchor=W)
+            
+            # 使用Text组件替代Label以支持超链接
+            self.analysis_text_widget = tk.Text(self.analysis_frame, height=4, width=60, wrap=tk.WORD, 
+                                              font=("微软雅黑", 9), relief=tk.FLAT)
+            self.analysis_text_widget.pack(fill=X, anchor=W)
+            self.analysis_text_widget.config(state=tk.DISABLED)  # 设置为只读
             
             # 操作区域LabelFrame
             operation_frame = ttk.LabelFrame(right_frame, text="操作", padding=10)
@@ -517,7 +538,7 @@ class MainWindow:
     
     def show_settings(self):
         """显示设置对话框"""
-        SettingsDialog(self.root, self.config_manager)
+        SettingsDialog(self, self.config_manager)
     
     def show_help(self):
         """显示帮助对话框"""
@@ -740,6 +761,40 @@ class MainWindow:
         except Exception as e:
             print(f"更新键盘快捷键时出错: {str(e)}")
             messagebox.showerror("快捷键错误", f"更新快捷键时出错: {str(e)}")
+    
+    def update_analysis_frame_title(self):
+        """更新音轨分析LabelFrame的标题"""
+        try:
+            # 获取配置的最低音和最高音
+            config_min_note = 48  # 默认值
+            config_max_note = 83  # 默认值
+            try:
+                from midi_analyzer import MidiAnalyzer
+                config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+                print(f"[DEBUG] 从配置获取的音域范围: {config_min_note} - {config_max_note}")
+            except Exception as e:
+                print(f"[DEBUG] 获取配置音域时出错: {str(e)}, 使用默认值: {config_min_note} - {config_max_note}")
+            
+            # 导入get_note_name函数
+            try:
+                from groups import get_note_name
+                print(f"[DEBUG] 成功导入get_note_name函数")
+            except:
+                # 如果导入失败，创建一个简单的替代函数
+                def get_note_name(note):
+                    return str(note)
+                print(f"[DEBUG] 使用替代的get_note_name函数")
+            
+            # 更新analysis_frame的标题
+            if hasattr(self, 'analysis_frame'):
+                new_title = f"音轨分析 {get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note})"
+                print(f"[DEBUG] 准备更新标题为: {new_title}")
+                self.analysis_frame.config(text=new_title)
+                print(f"[DEBUG] 音轨分析标题已更新: {new_title}")
+            else:
+                print("[DEBUG] analysis_frame属性不存在，无法更新标题")
+        except Exception as e:
+            print(f"[DEBUG] 更新音轨分析标题时出错: {str(e)}")
             
     def filter_songs(self):
         """根据搜索文本过滤歌曲列表"""
@@ -1256,6 +1311,23 @@ class MainWindow:
             tracks_str = "、".join(selected_track_names)
             
             # 更新第一行文本
+            # 获取配置的最低音和最高音
+            config_min_note = 48  # 默认值
+            config_max_note = 83  # 默认值
+            try:
+                from midi_analyzer import MidiAnalyzer
+                config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+            except:
+                pass
+            
+            # 导入get_note_name函数
+            try:
+                from groups import get_note_name
+            except:
+                # 如果导入失败，创建一个简单的替代函数
+                def get_note_name(note):
+                    return str(note)
+            
             first_line = f"音轨{{{tracks_str}}}   移调:{transpose}  转位:{octave}  总音符:{total_notes}"
             
             # 只使用已有的分析结果，不在这里生成新数据
@@ -1277,15 +1349,309 @@ class MainWindow:
                 else:
                     min_note_text = "最低音: - 未检测"
                 
-                self.analysis_text = f"{first_line}\n{max_note_text}\n{min_note_text}"
+                # 计算建议移调和转位
+                suggestion_text = self._calculate_transpose_suggestion(analysis_result, config_min_note, config_max_note, transpose, octave)
+                
+                self.analysis_text = f"{first_line}\n{max_note_text}\n{min_note_text}\n{suggestion_text}"
             else:
                 # 如果没有分析结果，显示提示文本
                 self.analysis_text = f"{first_line}\n最高音: - 未分析\n最低音: - 未分析"
         else:
-            self.analysis_text = "音轨{无选中}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测"
+            self.analysis_text = f"音轨{{无选中}}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测"
         
         # 确保UI更新
-        self.analysis_label.config(text=self.analysis_text)
+        self._update_analysis_text_widget()
+    
+    def _update_analysis_text_widget(self):
+        """更新分析文本组件，支持超链接"""
+        # 启用编辑
+        self.analysis_text_widget.config(state=tk.NORMAL)
+        # 清空内容
+        self.analysis_text_widget.delete(1.0, tk.END)
+        
+        # 插入文本
+        self.analysis_text_widget.insert(tk.END, self.analysis_text)
+        
+        # 查找并添加超链接
+        # 处理最高音超链接
+        if "<最高音>" in self.analysis_text:
+            start_index = self.analysis_text.find("<最高音>")
+            end_index = start_index + len("<最高音>")
+            
+            # 计算在Text组件中的位置
+            lines_before = self.analysis_text[:start_index].count('\n')
+            if lines_before > 0:
+                last_newline = self.analysis_text[:start_index].rfind('\n')
+                char_in_line = start_index - last_newline - 1
+                line_start = lines_before + 1
+            else:
+                char_in_line = start_index
+                line_start = 1
+            
+            # 添加超链接样式
+            self.analysis_text_widget.tag_add("max_note_link", f"{line_start}.{char_in_line}", f"{line_start}.{char_in_line + 4}")
+            self.analysis_text_widget.tag_config("max_note_link", foreground="blue", underline=True)
+            
+            # 绑定点击事件
+            self.analysis_text_widget.tag_bind("max_note_link", "<Button-1>", lambda e: self._apply_max_note_suggestion())
+        
+        # 处理最低音超链接
+        if "<最低音>" in self.analysis_text:
+            start_index = self.analysis_text.find("<最低音>")
+            end_index = start_index + len("<最低音>")
+            
+            # 计算在Text组件中的位置
+            lines_before = self.analysis_text[:start_index].count('\n')
+            if lines_before > 0:
+                last_newline = self.analysis_text[:start_index].rfind('\n')
+                char_in_line = start_index - last_newline - 1
+                line_start = lines_before + 1
+            else:
+                char_in_line = start_index
+                line_start = 1
+            
+            # 添加超链接样式
+            self.analysis_text_widget.tag_add("min_note_link", f"{line_start}.{char_in_line}", f"{line_start}.{char_in_line + 4}")
+            self.analysis_text_widget.tag_config("min_note_link", foreground="blue", underline=True)
+            
+            # 绑定点击事件
+            self.analysis_text_widget.tag_bind("min_note_link", "<Button-1>", lambda e: self._apply_min_note_suggestion())
+        
+        # 禁用编辑
+        self.analysis_text_widget.config(state=tk.DISABLED)
+    
+    def _calculate_transpose_suggestion(self, analysis_result, config_min_note, config_max_note, current_transpose, current_octave):
+        """计算建议的移调和转位值
+        
+        Args:
+            analysis_result: 分析结果字典
+            config_min_note: 配置的最低音
+            config_max_note: 配置的最高音
+            current_transpose: 当前移调值
+            current_octave: 当前转位值
+            
+        Returns:
+            str: 建议文本，包含超链接
+        """
+        # 检查是否有有效的最高音和最低音数据
+        if analysis_result['max_note'] is None or analysis_result['min_note'] is None:
+            return ""
+        
+        # 检查是否超限，只有超限时才显示建议
+        max_over_limit = analysis_result.get('is_max_over_limit', False)
+        min_over_limit = analysis_result.get('is_min_over_limit', False)
+        
+        # 如果都没有超限，不显示建议
+        if not max_over_limit and not min_over_limit:
+            return ""
+        
+        # 计算最高音的建议移调和转位（只在超限时计算）
+        max_suggestion_text = ""
+        if max_over_limit:
+            max_diff = config_max_note - analysis_result['max_note']
+            # 对于超出上限的情况，需要向下调整
+            if max_diff < 0:
+                # 向下调整：移调为负值，转位为0或负值
+                max_transpose_suggestion = max_diff % 12
+                max_octave_suggestion = max_diff // 12
+                # 如果移调值为正，需要调整
+                if max_transpose_suggestion > 0:
+                    max_transpose_suggestion -= 12
+                    max_octave_suggestion += 1
+            else:
+                # 对于低于下限的情况，需要向上调整
+                max_transpose_suggestion = max_diff % 12
+                max_octave_suggestion = max_diff // 12
+            
+            final_max_transpose = current_transpose + max_transpose_suggestion
+            final_max_octave = current_octave + max_octave_suggestion
+            max_suggestion_text = f"<最高音>移调{final_max_transpose}，转位{final_max_octave}"
+        
+        # 计算最低音的建议移调和转位（只在超限时计算）
+        min_suggestion_text = ""
+        if min_over_limit:
+            min_diff = config_min_note - analysis_result['min_note']
+            # 对于低于下限的情况，需要向上调整
+            if min_diff > 0:
+                # 向上调整：移调为正值，转位为0或正值
+                min_transpose_suggestion = min_diff % 12
+                min_octave_suggestion = min_diff // 12
+            else:
+                # 对于超出上限的情况，需要向下调整
+                min_transpose_suggestion = min_diff % 12
+                min_octave_suggestion = min_diff // 12
+                # 如果移调值为正，需要调整
+                if min_transpose_suggestion > 0:
+                    min_transpose_suggestion -= 12
+                    min_octave_suggestion += 1
+            
+            final_min_transpose = current_transpose + min_transpose_suggestion
+            final_min_octave = current_octave + min_octave_suggestion
+            min_suggestion_text = f"<最低音>移调{final_min_transpose}，转位{final_min_octave}"
+        
+        # 构建建议文本
+        suggestion_text = "建议"
+        if max_suggestion_text and min_suggestion_text:
+            suggestion_text += f"{max_suggestion_text}  {min_suggestion_text}"
+        elif max_suggestion_text:
+            suggestion_text += f"{max_suggestion_text}"
+        elif min_suggestion_text:
+            suggestion_text += f"{min_suggestion_text}"
+        
+        return suggestion_text
+    
+    def _apply_transpose_suggestion(self):
+        """应用建议的移调和转位设置"""
+        # 获取当前的分析结果
+        if not hasattr(self, 'current_analysis_result') or not self.current_analysis_result:
+            messagebox.showinfo("提示", "没有可用的分析结果")
+            return
+        
+        # 获取配置信息
+        config_min_note = 48  # 默认值
+        config_max_note = 83  # 默认值
+        try:
+            from midi_analyzer import MidiAnalyzer
+            config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+        except:
+            pass
+        
+        # 获取当前设置
+        current_transpose = self.transpose_var.get()
+        current_octave = self.octave_var.get()
+        
+        # 计算建议值（与_calculate_transpose_suggestion相同的逻辑）
+        analysis_result = self.current_analysis_result
+        
+        # 计算最高音的建议移调和转位
+        max_diff = config_max_note - analysis_result['max_note']
+        max_octave_suggestion = max_diff // 12  # 转位值（商）
+        max_transpose_suggestion = max_diff % 12  # 移调值（余数）
+        
+        # 计算最低音的建议移调和转位
+        min_diff = config_min_note - analysis_result['min_note']
+        # 对于低于下限的情况，需要向上调整
+        if min_diff > 0:
+            # 向上调整：移调为正值，转位为0或正值
+            min_transpose_suggestion = min_diff % 12
+            min_octave_suggestion = min_diff // 12
+        else:
+            # 对于超出上限的情况，需要向下调整
+            min_transpose_suggestion = min_diff % 12
+            min_octave_suggestion = min_diff // 12
+            # 如果移调值为正，需要调整
+            if min_transpose_suggestion > 0:
+                min_transpose_suggestion -= 12
+                min_octave_suggestion += 1
+        
+        # 与当前设置叠加计算最终值
+        final_max_transpose = current_transpose + max_transpose_suggestion
+        final_max_octave = current_octave + max_octave_suggestion
+        final_min_transpose = current_transpose + min_transpose_suggestion
+        final_min_octave = current_octave + min_octave_suggestion
+        
+        # 应用最高音的建议（优先考虑最高音，避免超出上限）
+        self.transpose_var.set(final_max_transpose)
+        self.octave_var.set(final_max_octave)
+        
+        # 更新显示
+        self.update_analysis_info()
+        
+        # 重新解析事件表
+        self.update_event_data()
+        
+        messagebox.showinfo("提示", f"已应用建议设置：移调{final_max_transpose}，转位{final_max_octave}")
+    
+    def _apply_max_note_suggestion(self):
+        """应用最高音的建议移调和转位设置"""
+        # 获取当前的分析结果
+        if not hasattr(self, 'current_analysis_result') or not self.current_analysis_result:
+            messagebox.showinfo("提示", "没有可用的分析结果")
+            return
+        
+        # 获取配置信息
+        config_min_note = 48  # 默认值
+        config_max_note = 83  # 默认值
+        try:
+            from midi_analyzer import MidiAnalyzer
+            config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+        except:
+            pass
+        
+        # 获取当前设置
+        current_transpose = self.transpose_var.get()
+        current_octave = self.octave_var.get()
+        
+        # 计算最高音的建议移调和转位
+        analysis_result = self.current_analysis_result
+        max_diff = config_max_note - analysis_result['max_note']
+        # 对于超出上限的情况，需要向下调整
+        if max_diff < 0:
+            # 向下调整：移调为负值，转位为0或负值
+            max_transpose_suggestion = max_diff % 12
+            max_octave_suggestion = max_diff // 12
+            # 如果移调值为正，需要调整
+            if max_transpose_suggestion > 0:
+                max_transpose_suggestion -= 12
+                max_octave_suggestion += 1
+        else:
+            # 对于低于下限的情况，需要向上调整
+            max_transpose_suggestion = max_diff % 12
+            max_octave_suggestion = max_diff // 12
+        
+        # 与当前设置叠加计算最终值
+        final_max_transpose = current_transpose + max_transpose_suggestion
+        final_max_octave = current_octave + max_octave_suggestion
+        
+        # 应用最高音的建议
+        self.transpose_var.set(final_max_transpose)
+        self.octave_var.set(final_max_octave)
+        
+        # 重新解析事件表（这会重新分析MIDI文件并更新分析结果）
+        self.update_event_data()
+        
+        # 更新显示（使用新的分析结果）
+        self.update_analysis_info()
+    
+    def _apply_min_note_suggestion(self):
+        """应用最低音的建议移调和转位设置"""
+        # 获取当前的分析结果
+        if not hasattr(self, 'current_analysis_result') or not self.current_analysis_result:
+            messagebox.showinfo("提示", "没有可用的分析结果")
+            return
+        
+        # 获取配置信息
+        config_min_note = 48  # 默认值
+        config_max_note = 83  # 默认值
+        try:
+            from midi_analyzer import MidiAnalyzer
+            config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+        except:
+            pass
+        
+        # 获取当前设置
+        current_transpose = self.transpose_var.get()
+        current_octave = self.octave_var.get()
+        
+        # 计算最低音的建议移调和转位
+        analysis_result = self.current_analysis_result
+        min_diff = config_min_note - analysis_result['min_note']
+        min_octave_suggestion = min_diff // 12  # 转位值（商）
+        min_transpose_suggestion = min_diff % 12  # 移调值（余数）
+        
+        # 与当前设置叠加计算最终值
+        final_min_transpose = current_transpose + min_transpose_suggestion
+        final_min_octave = current_octave + min_octave_suggestion
+        
+        # 应用最低音的建议
+        self.transpose_var.set(final_min_transpose)
+        self.octave_var.set(final_min_octave)
+        
+        # 重新解析事件表（这会重新分析MIDI文件并更新分析结果）
+        self.update_event_data()
+        
+        # 更新显示（使用新的分析结果）
+        self.update_analysis_info()
     
     def _update_play_button_during_countdown(self, remaining_seconds):
         """倒计时期间更新播放按钮文本
