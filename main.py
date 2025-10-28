@@ -43,7 +43,7 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 # 在主程序中添加或更新版本号
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 class Config:
     def __init__(self, filename="config.json"):
@@ -106,7 +106,7 @@ class MainWindow:
                 pass
         
         # 根据DPI缩放比例计算窗口大小，减少高度以消除底部多余空间
-        base_width, base_height = 550, 520  # 减少高度
+        base_width, base_height = 750, 520  # 增加200宽度，减少高度
         scaled_width = int(base_width * dpi_scale)
         scaled_height = int(base_height * dpi_scale)
         
@@ -151,9 +151,16 @@ class MainWindow:
         self.midi_files = []
         self.tracks_info = []  # 初始化音轨信息列表
         self.selected_tracks = set()  # 存储选中的音轨索引
-        self.transpose_var = tk.IntVar(value=0)  # 升降调（半音）
         self.current_events = []  # 存储事件表数据
-        self.octave_var = tk.IntVar(value=0)  # 整体转位（八度）
+        # 为每个音轨单独存储转音和转位设置
+        self.track_transpose_vars = {}  # 存储每个音轨的移调设置
+        self.track_octave_vars = {}    # 存储每个音轨的转位设置
+        # 存储每个音轨的分析结果
+        self.track_analysis_results = {}
+        
+        # 全局移调和转位变量
+        self.transpose_var = tk.IntVar(value=0)
+        self.octave_var = tk.IntVar(value=0)
         
         try:
             self.midi_player = MidiPlayer()
@@ -302,75 +309,6 @@ class MainWindow:
             right_frame = ttk.LabelFrame(main_frame, text="播放控制", padding=10)
             right_frame.grid(row=0, column=1, sticky=NSEW, padx=5, pady=5)  # 全方向拉伸，使其自适应
             
-            # 创建音轨详情LabelFrame
-            tracks_frame = ttk.LabelFrame(right_frame, text="音轨详情", padding=10)
-            tracks_frame.pack(fill=X, pady=5)
-            
-            # 当前歌曲名称标签 - 设置为不换行，超出部分不显示，占满整行
-            song_label_frame = ttk.Frame(tracks_frame)
-            song_label_frame.pack(fill=X, pady=2)
-            
-            # 设置文本左对齐，wraplength=0确保不换行，超出部分会自动截断
-            self.current_song_label = ttk.Label(song_label_frame, text="当前歌曲：未选择", anchor=W, wraplength=0, justify=LEFT)
-            self.current_song_label.pack(fill=X, expand=True)
-            
-            # 创建音轨列表 - 自适应右侧宽度，使用自定义渲染来显示复选框
-            self.tracks_list = ttk.Treeview(tracks_frame, columns=["checkbox", "track"], show="headings", height=6)
-            self.tracks_list.heading("checkbox", text="")
-            self.tracks_list.heading("track", text="音轨列表")
-            self.tracks_list.column("checkbox", width=30, stretch=NO, anchor='center')
-            self.tracks_list.column("track", stretch=YES)  # 允许列拉伸以适应右侧宽度
-            self.tracks_list.pack(fill=X, pady=5)
-            
-            # 设置Treeview样式
-            style = ttk.Style()
-            # 注意：我们需要禁用默认的选择行为，完全由我们自己控制
-            
-            # 绑定点击事件以处理复选框和整行选中
-            self.tracks_list.bind("<Button-1>", self.on_track_click)
-            self.tracks_list.bind("<<TreeviewSelect>>", lambda e: None)  # 禁用默认的选择事件处理
-            self.tracks_list.bind("<Motion>", lambda e: None)  # 禁用鼠标移动导致的高亮变化
-            
-            # 添加新的设置区域：移调和转位
-            settings_frame = ttk.LabelFrame(right_frame, text="转音设置", padding=10)
-            settings_frame.pack(fill=X, pady=5)
-            
-            # 移调设置
-            transpose_frame = ttk.Frame(settings_frame)
-            transpose_frame.pack(fill=X, pady=5)
-            
-            ttk.Label(transpose_frame, text="移调(半音):").pack(side=LEFT, padx=5)
-            
-            # 修改为左右布局的按钮
-            transpose_control_frame = ttk.Frame(transpose_frame)
-            transpose_control_frame.pack(side=LEFT, padx=5)
-            
-            ttk.Button(transpose_control_frame, text="-", command=lambda: self.adjust_value(self.transpose_var, -1), width=2).pack(side=LEFT)
-            self.transpose_entry = ttk.Entry(transpose_control_frame, textvariable=self.transpose_var, width=5, justify='center')
-            # 添加事件监听器，确保用户直接在输入框中修改值时也能更新事件表
-            self.transpose_entry.bind('<Return>', lambda event: self.on_transpose_octave_change())
-            self.transpose_entry.bind('<FocusOut>', lambda event: self.on_transpose_octave_change())
-            self.transpose_entry.pack(side=LEFT)
-            ttk.Button(transpose_control_frame, text="+", command=lambda: self.adjust_value(self.transpose_var, 1), width=2).pack(side=LEFT)
-            
-            # 整体转位设置
-            octave_frame = ttk.Frame(transpose_frame)
-            octave_frame.pack(side=LEFT, padx=15)
-            
-            ttk.Label(octave_frame, text="转位(八度):").pack(side=LEFT, padx=5)
-            
-            # 修改为左右布局的按钮
-            octave_control_frame = ttk.Frame(octave_frame)
-            octave_control_frame.pack(side=LEFT, padx=5)
-            
-            ttk.Button(octave_control_frame, text="-", command=lambda: self.adjust_value(self.octave_var, -1), width=2).pack(side=LEFT)
-            self.octave_entry = ttk.Entry(octave_control_frame, textvariable=self.octave_var, width=5, justify='center')
-            # 添加事件监听器，确保用户直接在输入框中修改值时也能更新事件表
-            self.octave_entry.bind('<Return>', lambda event: self.on_transpose_octave_change())
-            self.octave_entry.bind('<FocusOut>', lambda event: self.on_transpose_octave_change())
-            self.octave_entry.pack(side=LEFT)
-            ttk.Button(octave_control_frame, text="+", command=lambda: self.adjust_value(self.octave_var, 1), width=2).pack(side=LEFT)
-            
             # 获取配置的最低音和最高音
             config_min_note = 48  # 默认值
             config_max_note = 83  # 默认值
@@ -388,18 +326,49 @@ class MainWindow:
                 def get_note_name(note):
                     return str(note)
             
-            # MIDI分析数据显示区域
-            self.analysis_frame = ttk.LabelFrame(right_frame, text=f"音轨分析 {get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note})", padding=10)
-            self.analysis_frame.pack(fill=X, pady=4)
+            # 创建音轨详情LabelFrame - 包含最低音和最高音信息
+            tracks_frame = ttk.LabelFrame(right_frame, 
+                                         text=f"音轨详情 ({get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note}))", 
+                                         padding=10)
+            tracks_frame.pack(fill=X, pady=5)
             
-            # 分析数据内容
-            self.analysis_text = "选中音轨分析(含移调、音程转位) 总音符数 0\n最高音: - 未检测\n最低音: - 未检测"
+            # 当前歌曲名称标签 - 设置为不换行，超出部分不显示，占满整行
+            song_label_frame = ttk.Frame(tracks_frame)
+            song_label_frame.pack(fill=X, pady=2)
             
-            # 使用Text组件替代Label以支持超链接
-            self.analysis_text_widget = tk.Text(self.analysis_frame, height=4, width=60, wrap=tk.WORD, 
-                                              font=("微软雅黑", 9), relief=tk.FLAT)
-            self.analysis_text_widget.pack(fill=X, anchor=W)
-            self.analysis_text_widget.config(state=tk.DISABLED)  # 设置为只读
+            # 设置文本左对齐，wraplength=0确保不换行，超出部分会自动截断
+            self.current_song_label = ttk.Label(song_label_frame, text="当前歌曲：未选择", anchor=W, wraplength=0, justify=LEFT)
+            self.current_song_label.pack(fill=X, expand=True)
+            
+            # 创建音轨列表表格框架 - 支持垂直滚动
+            track_table_frame = ttk.Frame(tracks_frame)
+            track_table_frame.pack(fill=BOTH, expand=True, pady=5)
+            
+            # 创建Canvas作为滚动区域
+            self.track_canvas = tk.Canvas(track_table_frame)
+            self.track_canvas.pack(side=tk.LEFT, fill=BOTH, expand=True)
+            
+            # 添加垂直滚动条
+            self.track_scrollbar = ttk.Scrollbar(track_table_frame, orient=tk.VERTICAL, command=self.track_canvas.yview)
+            self.track_scrollbar.pack(side=tk.RIGHT, fill=Y)
+            
+            # 配置Canvas的滚动
+            self.track_canvas.configure(yscrollcommand=self.track_scrollbar.set)
+            
+            # 创建内部框架来容纳所有音轨行
+            self.track_rows_frame = ttk.Frame(self.track_canvas)
+            self.track_canvas_window = self.track_canvas.create_window((0, 0), window=self.track_rows_frame, anchor="nw")
+            
+            # 绑定鼠标滚轮事件以支持滚动
+            self.track_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+            
+            # 当调整窗口大小时，调整Canvas中内容的宽度
+            def on_canvas_configure(event):
+                # 当Canvas宽度改变时，更新内部框架的宽度
+                width = event.width
+                self.track_canvas.itemconfig(self.track_canvas_window, width=width)
+            
+            self.track_canvas.bind('<Configure>', on_canvas_configure)
             
             # 操作区域LabelFrame
             operation_frame = ttk.LabelFrame(right_frame, text="操作", padding=10)
@@ -503,31 +472,70 @@ class MainWindow:
         # 如果有当前文件和选中的音轨，生成事件数据
         if hasattr(self, 'current_file_path') and self.current_file_path and self.selected_tracks:
             try:
-                # 获取当前的移调和转位设置
-                transpose = self.transpose_var.get()
-                octave_shift = self.octave_var.get()
+                print("[DEBUG] 开始更新事件数据")
+                # 获取当前的全局移调和转位设置
+                global_transpose = self.transpose_var.get()
+                global_octave_shift = self.octave_var.get()
+                print(f"[DEBUG] 全局移调: {global_transpose}, 全局转位: {global_octave_shift}")
                 
-                # 使用MidiAnalyzer来生成事件数据，传递移调和转位参数
+                # 使用MidiAnalyzer来生成事件数据，传递全局移调和转位参数
                 events, analysis_result = MidiAnalyzer.analyze_midi_file(
                     self.current_file_path, 
                     self.selected_tracks,
-                    transpose=transpose,
-                    octave_shift=octave_shift
+                    transpose=global_transpose,
+                    octave_shift=global_octave_shift
                 )
+                
+                # 应用单个音轨的移调和转位设置
+                if hasattr(self, 'track_transpose_vars') and hasattr(self, 'track_octave_vars'):
+                    print("[DEBUG] 应用单个音轨的转音设置")
+                    for track_index in self.track_transpose_vars:
+                        if track_index in self.selected_tracks:
+                            track_transpose = self.track_transpose_vars[track_index].get()
+                            track_octave = self.track_octave_vars[track_index].get()
+                            print(f"[DEBUG] 音轨{track_index} 移调: {track_transpose}, 转位: {track_octave}")
+                    
+                    modified_count = 0
+                    for event in events:
+                        track_index = event.get('track')
+                        if track_index is not None and track_index in self.track_transpose_vars:
+                            # 获取该音轨的移调和转位设置
+                            track_transpose = self.track_transpose_vars[track_index].get()
+                            track_octave = self.track_octave_vars[track_index].get()
+                            
+                            # 应用音轨特定的移调和转位
+                            total_offset = track_transpose + track_octave * 12
+                            if total_offset != 0:
+                                old_note = event['note']
+                                event['note'] += total_offset
+                                modified_count += 1
+                                
+                                # 更新分组信息
+                                from groups import group_for_note
+                                event['group'] = group_for_note(event['note'])
+                                
+                                # 调试信息：只打印少量修改的事件
+                                if modified_count <= 5:
+                                    print(f"[DEBUG] 修改音轨{track_index} 音符: {old_note} -> {event['note']}")
+                    
+                    print(f"[DEBUG] 共修改 {modified_count} 个事件的音符值")
                 
                 # 更新当前事件数据和分析结果
                 self.current_events = events
                 self.current_analysis_result = analysis_result
                 
-                print(f"已生成事件数据：{len(self.current_events)}个事件，{len(self.current_events)/2}个音符。")
+                print(f"[DEBUG] 已生成事件数据：{len(self.current_events)}个事件，{len(self.current_events)/2}个音符。")
                 
                 # 如果有打开的事件表对话框，通知它刷新显示
                 if hasattr(self, 'current_event_table_dialog') and self.current_event_table_dialog:
                     try:
+                        print("[DEBUG] 通知事件表对话框刷新")
                         self.current_event_table_dialog.populate_event_table()
-                        print("[DEBUG] 已通知事件表对话框刷新显示")
+                        print("[DEBUG] 事件表对话框刷新完成")
                     except Exception as e:
                         print(f"[DEBUG] 通知事件表对话框刷新时出错: {str(e)}")
+                else:
+                    print("[DEBUG] 当前没有打开的事件表对话框")
                 
             except Exception as e:
                 print(f"生成事件数据时出错: {str(e)}")
@@ -957,17 +965,21 @@ class MainWindow:
         return text
     
     def _load_midi_tracks(self, file_path):
-        """加载MIDI文件的音轨信息 - 优化版本"""
+        """加载MIDI文件的音轨信息 - 优化版本，支持音轨独立转音控制"""
         try:
             # 清空当前音轨列表
-            for item in self.tracks_list.get_children():
-                self.tracks_list.delete(item)
+            for widget in self.track_rows_frame.winfo_children():
+                widget.destroy()
             
             # 清空选中的音轨集合
             self.selected_tracks.clear()
+            self.track_transpose_vars = {}
+            self.track_octave_vars = {}
+            self.track_analysis_results = {}
             
             # 显示加载状态
-            loading_label = self.tracks_list.insert('', END, values=["", "正在加载MIDI文件..."])
+            loading_label = ttk.Label(self.track_rows_frame, text="正在加载MIDI文件...", padding=10)
+            loading_label.pack(fill=X)
             self.root.update()
             
             # 解析MIDI文件 - 使用更安全的编码处理方式
@@ -1047,29 +1059,116 @@ class MainWindow:
                     # 在主线程中更新UI
                     def update_ui():
                         # 移除加载状态
-                        self.tracks_list.delete(loading_label)
+                        loading_label.destroy()
                         
-                        # 先添加"全部音轨"项作为全选/反选控制
-                        self.all_tracks_item = self.tracks_list.insert('', END, values=["✓", "全部音轨"], tags="all_tracks")
-                        # 默认全选时给"全部音轨"项也添加高亮
-                        self.tracks_list.selection_add(self.all_tracks_item)
+                        # 添加全选/取消全选控制行
+                        all_tracks_frame = ttk.Frame(self.track_rows_frame)
+                        all_tracks_frame.pack(fill=X, pady=2)
+                        
+                        # 全选复选框
+                        self.all_tracks_var = tk.BooleanVar(value=True)
+                        all_checkbox = ttk.Checkbutton(all_tracks_frame, variable=self.all_tracks_var, 
+                                                     command=self.toggle_select_all)
+                        all_checkbox.pack(side=LEFT, padx=5)
+                        
+                        # 全选标签
+                        ttk.Label(all_tracks_frame, text="全部音轨", font=('微软雅黑', 9, 'bold')).pack(side=LEFT, padx=5)
                         
                         # 添加音轨信息
                         self.tracks_info = []
+                        
+                        # 为每个音轨创建独立的行
                         for info in tracks_info:
-                            # 添加到Treeview，默认选中（显示✓）
-                            checkbox = "✓"  # 默认选中
-                            item = self.tracks_list.insert('', END, values=[checkbox, info["display_name"]], tags=(info["track_index"],))
+                            track_index = info["track_index"]
+                            
+                            # 创建音轨行框架
+                            track_frame = ttk.Frame(self.track_rows_frame)
+                            track_frame.pack(fill=X, pady=2, ipady=2)
+                            
+                            # 设置grid布局，让中间列占据剩余空间
+                            track_frame.grid_columnconfigure(1, weight=1)  # 中间列（分析区域）占据剩余空间
+                            
+                            # 第一列：复选框（固定宽度）
+                            track_var = tk.BooleanVar(value=True)
+                            track_checkbox = ttk.Checkbutton(track_frame, variable=track_var,
+                                                           command=lambda idx=track_index: self.toggle_track_selection(idx))
+                            track_checkbox.grid(row=0, column=0, sticky='nsw', padx=5)  # 左侧固定位置
+                            
+                            # 第二列：音轨及分析信息（自适应宽度）
+                            analysis_frame = ttk.LabelFrame(track_frame, text="音轨及分析")
+                            analysis_frame.grid(row=0, column=1, sticky='nsew', padx=5)  # 填充整行高度和宽度
+                            analysis_frame.grid_columnconfigure(0, weight=1)  # 内部列也设置权重
+                            
+                            # 音轨名称标签
+                            track_name_label = ttk.Label(analysis_frame, text=info["display_name"], font=('微软雅黑', 9))
+                            track_name_label.pack(fill=X, padx=5, pady=2)  # 填充整个宽度
+                            
+                            # 分析结果文本框 - 初始就创建Text组件而非Label
+                            analysis_label = tk.Text(analysis_frame, height=4, font=('微软雅黑', 9), wrap=tk.WORD)
+                            analysis_label.insert(tk.END, "正在分析...")
+                            analysis_label.pack(fill=X, padx=5, pady=1)  # 填充整个宽度
+                            analysis_label.config(state=tk.DISABLED)  # 设置为只读
+                            
+                            # 第三列：转音设置（固定宽度）
+                            transpose_frame = ttk.LabelFrame(track_frame, text="转音设置")
+                            transpose_frame.grid(row=0, column=2, sticky='nse', padx=5)  # 右侧固定位置
+                            
+                            # 创建移调和转位控制
+                            track_transpose_var = tk.IntVar(value=0)
+                            track_octave_var = tk.IntVar(value=0)
+                            
+                            # 移调控制
+                            transpose_control_frame = ttk.Frame(transpose_frame)
+                            transpose_control_frame.pack(fill=X, pady=2)
+                            
+                            ttk.Label(transpose_control_frame, text="移调(半音):", font=('微软雅黑', 9)).pack(side=LEFT, padx=2)
+                            ttk.Button(transpose_control_frame, text="-", width=2,
+                                      command=lambda var=track_transpose_var, idx=track_index:
+                                          self.adjust_track_transpose(idx, var, -1)).pack(side=LEFT)
+                            transpose_entry = ttk.Entry(transpose_control_frame, textvariable=track_transpose_var, 
+                                                      width=3, justify='center', font=('微软雅黑', 9))
+                            transpose_entry.pack(side=LEFT, padx=1)
+                            # 添加事件监听器
+                            transpose_entry.bind('<Return>', lambda event, idx=track_index, var=track_transpose_var:
+                                                self.on_track_transpose_change(idx, var))
+                            transpose_entry.bind('<FocusOut>', lambda event, idx=track_index, var=track_transpose_var:
+                                                self.on_track_transpose_change(idx, var))
+                            ttk.Button(transpose_control_frame, text="+", width=2,
+                                      command=lambda var=track_transpose_var, idx=track_index:
+                                          self.adjust_track_transpose(idx, var, 1)).pack(side=LEFT)
+                            
+                            # 转位控制
+                            octave_control_frame = ttk.Frame(transpose_frame)
+                            octave_control_frame.pack(fill=X, pady=2)
+                            
+                            ttk.Label(octave_control_frame, text="转位(八度):", font=('微软雅黑', 9)).pack(side=LEFT, padx=2)
+                            ttk.Button(octave_control_frame, text="-", width=2,
+                                      command=lambda var=track_octave_var, idx=track_index:
+                                          self.adjust_track_octave(idx, var, -1)).pack(side=LEFT)
+                            octave_entry = ttk.Entry(octave_control_frame, textvariable=track_octave_var, 
+                                                    width=3, justify='center', font=('微软雅黑', 9))
+                            octave_entry.pack(side=LEFT, padx=1)
+                            # 添加事件监听器
+                            octave_entry.bind('<Return>', lambda event, idx=track_index, var=track_octave_var:
+                                            self.on_track_octave_change(idx, var))
+                            octave_entry.bind('<FocusOut>', lambda event, idx=track_index, var=track_octave_var:
+                                            self.on_track_octave_change(idx, var))
+                            ttk.Button(octave_control_frame, text="+", width=2,
+                                      command=lambda var=track_octave_var, idx=track_index:
+                                          self.adjust_track_octave(idx, var, 1)).pack(side=LEFT)
                             
                             # 存储音轨信息
                             self.tracks_info.append({
-                                "track_index": info["track_index"], 
-                                "note_count": info["note_count"], 
-                                "item_id": item
+                                "track_index": track_index,
+                                "note_count": info["note_count"],
+                                "frame": track_frame,
+                                "checkbox_var": track_var,
+                                "analysis_label": analysis_label
                             })
                             
-                            # 默认全选并选中行（高亮）
-                            self.tracks_list.selection_add(item)
+                            # 存储转音和转位变量
+                            self.track_transpose_vars[track_index] = track_transpose_var
+                            self.track_octave_vars[track_index] = track_octave_var
                         
                         self.selected_tracks = selected_tracks
                         
@@ -1084,8 +1183,8 @@ class MainWindow:
                         # 音轨已默认全选，立即生成事件数据
                         self.update_event_data()
                         
-                        # 更新分析信息显示
-                        self.update_analysis_info()
+                        # 更新分析信息显示（异步进行，避免UI冻结）
+                        self.root.after(100, self.update_analysis_info)
                             
                         # 启用试听MIDI按钮
                         if hasattr(self, 'midi_play_button'):
@@ -1096,6 +1195,9 @@ class MainWindow:
                             self.play_button.config(state=NORMAL)
                         if hasattr(self, 'stop_button'):
                             self.stop_button.config(state=DISABLED)
+                        
+                        # 更新Canvas的滚动区域
+                        self.track_canvas.configure(scrollregion=self.track_canvas.bbox("all"))
                     
                     # 在主线程中执行UI更新
                     self.root.after(0, update_ui)
@@ -1103,8 +1205,10 @@ class MainWindow:
                 except Exception as e:
                     # 在主线程中显示错误
                     def show_error():
-                        self.tracks_list.delete(loading_label)
+                        loading_label.destroy()
                         print(f"加载MIDI文件时出错: {str(e)}")
+                        error_label = ttk.Label(self.track_rows_frame, text=f"加载MIDI文件时出错: {str(e)}", foreground="red")
+                        error_label.pack(padx=10, pady=10)
                         messagebox.showerror("MIDI错误", f"加载MIDI文件时出错: {str(e)}")
                     
                     self.root.after(0, show_error)
@@ -1269,54 +1373,343 @@ class MainWindow:
         print(f"全部音轨项ID: {self.all_tracks_item}")
     
     def toggle_select_all(self):
-        """处理全选/反选功能"""
-        # 打印操作前状态
-        print("===== 切换全选前状态 =====")
-        self._print_track_states()
+        """切换全选状态"""
+        # 获取当前状态
+        is_selected = self.all_tracks_var.get()
         
-        # 检查"全部音轨"项的当前状态
-        all_values = list(self.tracks_list.item(self.all_tracks_item, "values"))
-        current_status = all_values[0] == "✓"
-        
-        # 如果全部已选中，则取消选中所有音轨；否则选中所有音轨
-        if current_status:
-            # 取消选中所有音轨
-            self.selected_tracks.clear()
-            # 更新UI，移除所有复选框并取消行高亮
-            for info in self.tracks_info:
-                values = list(self.tracks_list.item(info['item_id'], "values"))
-                values[0] = "□"  # 使用明确的未选中标记
-                self.tracks_list.item(info['item_id'], values=values)
-                self.tracks_list.selection_remove(info['item_id'])
-            # 更新"全部音轨"项
-            all_values[0] = "□"  # 使用明确的未选中标记
-            self.tracks_list.item(self.all_tracks_item, values=all_values)
-            # 取消"全部音轨"项的高亮
-            self.tracks_list.selection_remove(self.all_tracks_item)
-        else:
-            # 选中所有音轨
-            self.selected_tracks = set(info['track_index'] for info in self.tracks_info)
-            # 更新UI，添加所有复选框并添加行高亮
-            for info in self.tracks_info:
-                values = list(self.tracks_list.item(info['item_id'], "values"))
-                values[0] = "✓"
-                self.tracks_list.item(info['item_id'], values=values)
-                self.tracks_list.selection_add(info['item_id'])
-            # 更新"全部音轨"项
-            all_values[0] = "✓"
-            self.tracks_list.item(self.all_tracks_item, values=all_values)
-            # 添加"全部音轨"项的高亮
-            self.tracks_list.selection_add(self.all_tracks_item)
+        # 更新所有音轨的选中状态
+        self.selected_tracks.clear()
+        for track_info in self.tracks_info:
+            track_index = track_info["track_index"]
+            track_info["checkbox_var"].set(is_selected)
+            
+            if is_selected:
+                self.selected_tracks.add(track_index)
         
         # 更新分析信息
         self.update_analysis_info()
-        # 调用track_selected更新按钮状态
-        self.track_selected()
+        # 更新事件数据
+        self.update_event_data()
         
-        # 打印操作后状态
-        print("===== 切换全选后状态 =====")
-        self._print_track_states()
-        print("====================\n")
+        # 打印状态
+        print(f"全选状态更新: {'全选' if is_selected else '取消全选'}，当前选中{len(self.selected_tracks)}个音轨")
+    
+    def toggle_track_selection(self, track_index):
+        """切换单个音轨的选中状态"""
+        # 查找对应的音轨信息
+        for track_info in self.tracks_info:
+            if track_info["track_index"] == track_index:
+                is_selected = track_info["checkbox_var"].get()
+                
+                # 更新选中集合
+                if is_selected:
+                    self.selected_tracks.add(track_index)
+                else:
+                    self.selected_tracks.discard(track_index)
+                
+                # 更新全选复选框状态
+                self._update_all_tracks_checkbox()
+                
+                # 更新分析信息和事件数据
+                self.update_analysis_info()
+                self.update_event_data()
+                
+                print(f"音轨{track_index}选择状态: {'选中' if is_selected else '取消选中'}")
+                break
+    
+    def _update_all_tracks_checkbox(self):
+        """更新全选复选框的状态"""
+        if not self.tracks_info:
+            self.all_tracks_var.set(False)
+            return
+        
+        all_selected = all(track_info["checkbox_var"].get() for track_info in self.tracks_info)
+        self.all_tracks_var.set(all_selected)
+    
+    def adjust_track_transpose(self, track_index, var, delta):
+        """调整单个音轨的移调值"""
+        current_value = var.get()
+        var.set(current_value + delta)
+        self.on_track_transpose_change(track_index, var)
+    
+    def adjust_track_octave(self, track_index, var, delta):
+        """调整单个音轨的转位值"""
+        current_value = var.get()
+        var.set(current_value + delta)
+        self.on_track_octave_change(track_index, var)
+    
+    def on_track_transpose_change(self, track_index, var):
+        """当单个音轨的移调值改变时"""
+        try:
+            # 确保值是整数
+            value = var.get()
+            var.set(int(value))
+            print(f"[DEBUG] 音轨{track_index}移调值改变为: {var.get()}")
+            
+            # 重新分析该音轨
+            self._analyze_single_track(track_index)
+            
+            # 更新事件数据
+            self.update_event_data()
+            print(f"[DEBUG] 音轨{track_index}移调后事件数据已更新")
+            
+        except ValueError:
+            # 如果输入无效，重置为0
+            var.set(0)
+            print(f"[DEBUG] 音轨{track_index}移调值无效，已重置为0")
+    
+    def on_track_octave_change(self, track_index, var):
+        """当单个音轨的转位值改变时"""
+        try:
+            # 确保值是整数
+            value = var.get()
+            var.set(int(value))
+            print(f"[DEBUG] 音轨{track_index}转位值改变为: {var.get()}")
+            
+            # 重新分析该音轨
+            self._analyze_single_track(track_index)
+            
+            # 更新事件数据
+            self.update_event_data()
+            print(f"[DEBUG] 音轨{track_index}转位后事件数据已更新")
+            
+        except ValueError:
+            # 如果输入无效，重置为0
+            var.set(0)
+            print(f"[DEBUG] 音轨{track_index}转位值无效，已重置为0")
+    
+    def _analyze_single_track(self, track_index):
+        """分析单个音轨"""
+        if not self.current_file_path:
+            return
+        
+        try:
+            # 导入groups.py中的标准函数
+            from groups import get_note_name, group_for_note
+            
+            # 获取配置的最低音和最高音
+            try:
+                from midi_analyzer import MidiAnalyzer
+                config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
+            except:
+                config_min_note, config_max_note = 48, 83  # 默认值
+            
+            import mido
+            mid = mido.MidiFile(self.current_file_path)
+            track = mid.tracks[track_index]
+            
+            # 获取转音和转位值
+            transpose = self.track_transpose_vars.get(track_index, tk.IntVar(value=0)).get()
+            octave = self.track_octave_vars.get(track_index, tk.IntVar(value=0)).get()
+            
+            # 分析音轨并应用偏移
+            notes = []
+            shifted_notes = []  # 保存应用偏移后的音符
+            for msg in track:
+                if msg.type == 'note_on' and msg.velocity > 0:
+                    notes.append(msg.note)
+                    # 计算应用偏移后的音符值
+                    total_offset = transpose + (octave * 12)
+                    shifted_notes.append(msg.note + total_offset)
+            
+            if not notes:
+                # 如果没有音符，设置空分析结果并更新UI
+                analysis_text = "此音轨没有音符数据"
+                # 更新分析结果
+                self.track_analysis_results[track_index] = {
+                    "state": "completed",
+                    "analysis_text": analysis_text
+                }
+                
+                # 在主线程中更新UI显示
+                def update_ui_empty():
+                    for track_info in self.tracks_info:
+                        if track_info["track_index"] == track_index:
+                            try:
+                                label = track_info["analysis_label"]
+                                label.configure(text=analysis_text)
+                            except Exception as e:
+                                print(f"更新空音轨UI时出错: {str(e)}")
+                            break
+                
+                self.root.after(0, update_ui_empty)
+                return
+            
+            # 计算最高音和最低音
+            max_note = max(notes)  # 原始最高音
+            min_note = min(notes)  # 原始最低音
+            
+            # 计算应用偏移后的最高音和最低音
+            shifted_max_note = max(shifted_notes)
+            shifted_min_note = min(shifted_notes)
+            
+            # 计算超限数量（使用配置的范围）
+            upper_over_limit = sum(1 for n in shifted_notes if n > config_max_note)
+            lower_over_limit = sum(1 for n in shifted_notes if n < config_min_note)
+            
+            # 全面检查是否超限：
+            # 1. 检查最高音是否超过上限 或 低于下限
+            # 2. 检查最低音是否低于下限 或 超过上限
+            is_max_over_limit = shifted_max_note > config_max_note or shifted_max_note < config_min_note
+            is_min_over_limit = shifted_min_note < config_min_note or shifted_min_note > config_max_note
+            
+            # 额外检查整个音域是否在配置范围内
+            is_range_valid = config_min_note <= shifted_min_note and shifted_max_note <= config_max_note
+            
+            # 输出详细的超限检查信息
+            print(f"超限检查详细信息：")
+            print(f"  应用偏移后最高音: {shifted_max_note}, 最低音: {shifted_min_note}")
+            print(f"  配置范围: {config_min_note}-{config_max_note}")
+            print(f"  最高音是否超限: {is_max_over_limit} (超过上限: {shifted_max_note > config_max_note}, 低于下限: {shifted_max_note < config_min_note})")
+            print(f"  最低音是否超限: {is_min_over_limit} (低于下限: {shifted_min_note < config_min_note}, 超过上限: {shifted_min_note > config_max_note})")
+            
+            # 获取音符名称和分组（使用应用偏移后的值）
+            shifted_max_note_name = get_note_name(shifted_max_note)
+            shifted_min_note_name = get_note_name(shifted_min_note)
+            max_octave_group = group_for_note(shifted_max_note)
+            min_octave_group = group_for_note(shifted_min_note)
+            
+            # 构建分析结果字典 - 保存应用偏移后的值用于建议计算
+            analysis_result = {
+                'max_note': shifted_max_note,  # 保存应用偏移后的最高音
+                'min_note': shifted_min_note,  # 保存应用偏移后的最低音
+                'original_max_note': max_note,  # 保存原始最高音
+                'original_min_note': min_note,  # 保存原始最低音
+                'is_max_over_limit': is_max_over_limit,
+                'is_min_over_limit': is_min_over_limit,
+                'upper_over_limit': upper_over_limit,
+                'lower_over_limit': lower_over_limit
+            }
+            
+            # 输出日志用于调试
+            print(f"音轨{track_index}分析调试:")
+            print(f"  原始最高音: {max_note}, 原始最低音: {min_note}")
+            print(f"  当前移调: {transpose}, 当前转位: {octave}")
+            print(f"  应用偏移后最高音: {shifted_max_note}, 最低音: {shifted_min_note}")
+            print(f"  配置范围: {config_min_note}-{config_max_note}")
+            print(f"  是否超限: 最高音{is_max_over_limit}({shifted_max_note} > {config_max_note}), 最低音{is_min_over_limit}({shifted_min_note} < {config_min_note})")
+            # 额外检查最高音是否低于配置最小值
+            is_max_below_min = shifted_max_note < config_min_note
+            print(f"  最高音低于配置最小值: {is_max_below_min}({shifted_max_note} < {config_min_note})")
+            
+            # 计算建议 - 基于应用偏移后的值
+            suggestion_text = self._calculate_transpose_suggestion(
+                analysis_result, config_min_note, config_max_note, transpose, octave
+            )
+            
+            # 构建分析文本 - 显示应用偏移后的音符值
+            analysis_text = (
+                f"最高音: {shifted_max_note_name}({shifted_max_note})  {max_octave_group}  {'超限' if upper_over_limit > 0 else '未超限'}  超限数量: {upper_over_limit}\n"
+                f"最低音: {shifted_min_note_name}({shifted_min_note})  {min_octave_group}  {'超限' if lower_over_limit > 0 else '未超限'}  超限数量: {lower_over_limit}\n"
+            )
+            
+            # 添加建议文本
+            if suggestion_text:
+                analysis_text += suggestion_text
+            
+            # 更新分析结果
+            self.track_analysis_results[track_index] = {
+                "max_note": max_note,
+                "min_note": min_note,
+                "is_max_over_limit": is_max_over_limit,
+                "is_min_over_limit": is_min_over_limit,
+                "upper_over_limit": upper_over_limit,
+                "lower_over_limit": lower_over_limit,
+                "analysis_text": analysis_text,
+                "suggestion_text": suggestion_text,  # 保存建议文本用于超链接处理
+                "state": "completed"  # 标记分析已完成
+            }
+            
+            # 在主线程中更新UI显示，避免渲染问题
+            def update_ui():
+                for track_info in self.tracks_info:
+                    if track_info["track_index"] == track_index:
+                        try:
+                            # 获取当前Text组件
+                            text_widget = track_info["analysis_label"]
+                            
+                            # 启用编辑并更新内容
+                            text_widget.config(state=tk.NORMAL)
+                            text_widget.delete(1.0, tk.END)
+                            text_widget.insert(tk.END, analysis_text)
+                            
+                            # 清除所有现有标签，避免重复绑定
+                            for tag in text_widget.tag_names():
+                                text_widget.tag_remove(tag, "1.0", tk.END)
+                            
+                            # 查找并添加超链接（如果需要）
+                            if "<最高音>" in analysis_text:
+                                start_pos = text_widget.search("<最高音>", "1.0", tk.END)
+                                if start_pos:
+                                    end_pos = f"{start_pos}+4c"
+                                    text_widget.tag_add("max_note_link", start_pos, end_pos)
+                                    text_widget.tag_config("max_note_link", foreground="blue", underline=True)
+                                    text_widget.tag_bind("max_note_link", "<Button-1>", 
+                                                        lambda e, idx=track_index: self._apply_max_note_suggestion(idx))
+                            
+                            if "<最低音>" in analysis_text:
+                                start_pos = text_widget.search("<最低音>", "1.0", tk.END)
+                                if start_pos:
+                                    end_pos = f"{start_pos}+4c"
+                                    text_widget.tag_add("min_note_link", start_pos, end_pos)
+                                    text_widget.tag_config("min_note_link", foreground="blue", underline=True)
+                                    text_widget.tag_bind("min_note_link", "<Button-1>", 
+                                                        lambda e, idx=track_index: self._apply_min_note_suggestion(idx))
+                            
+                            # 禁用编辑
+                            text_widget.config(state=tk.DISABLED)
+                            print(f"成功更新音轨{track_index}的Text组件内容")
+                            
+                        except Exception as text_error:
+                            # 如果更新失败，记录错误信息
+                            print(f"更新Text组件失败: {str(text_error)}")
+                            # 尝试备选方案：创建一个新的Text组件
+                            try:
+                                parent = text_widget.master
+                                text_widget.pack_forget()
+                                
+                                # 创建新的Text组件，确保自适应宽度
+                                new_text_widget = tk.Text(parent, height=4, font=('微软雅黑', 9), wrap=tk.WORD)
+                                new_text_widget.insert(tk.END, analysis_text)
+                                new_text_widget.pack(fill=X, padx=5, pady=1)  # 填充整个宽度
+                                new_text_widget.config(state=tk.DISABLED)
+                                
+                                # 更新引用
+                                track_info["analysis_label"] = new_text_widget
+                                print(f"成功为音轨{track_index}创建新的Text组件")
+                            except Exception as fallback_error:
+                                print(f"备选方案也失败: {str(fallback_error)}")
+                        except Exception as e:
+                            print(f"更新音轨{track_index}UI时发生未预期错误: {str(e)}")
+                        break
+            
+            # 使用after方法在主线程中执行UI更新
+            self.root.after(0, update_ui)
+            
+        except Exception as e:
+            print(f"分析音轨{track_index}时出错: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            
+            # 出错时也尝试更新UI，显示错误信息
+            def update_ui_error():
+                for track_info in self.tracks_info:
+                    if track_info["track_index"] == track_index:
+                        try:
+                            text_widget = track_info["analysis_label"]
+                            # 对于Text组件，使用insert方法而不是configure
+                            text_widget.config(state=tk.NORMAL)
+                            text_widget.delete(1.0, tk.END)
+                            text_widget.insert(tk.END, f"分析出错: {str(e)}")
+                            text_widget.config(state=tk.DISABLED)
+                        except:
+                            pass
+                        break
+            
+            self.root.after(0, update_ui_error)
+    
+    # 修改update_analysis_info方法以支持单音轨分析
+
     
     def adjust_value(self, var, delta):
         """调整数值变量"""
@@ -1346,85 +1739,50 @@ class MainWindow:
         # 更新分析信息
         self.update_analysis_info()
     
-    def update_analysis_info(self):
-        """更新音轨分析信息显示（只负责显示，不生成数据）"""
-        # 获取当前的移调和转位设置
-        transpose = self.transpose_var.get()
-        octave = self.octave_var.get()
-        
-        if self.selected_tracks and hasattr(self, 'current_file_path') and self.current_file_path:
-            # 获取选中的音轨名称列表
-            selected_track_names = []
-            total_notes = 0
-            
-            for info in self.tracks_info:
-                if info['track_index'] in self.selected_tracks:
-                    # 获取音轨名称（从tracks_list中获取）
-                    values = self.tracks_list.item(info['item_id'], "values")
-                    if values and len(values) > 1:
-                        # 提取音轨名称，如"音轨1"、"音轨2"等
-                        track_text = values[1]
-                        if "音轨" in track_text:
-                            # 提取音轨编号部分
-                            track_name = track_text.split("：")[0]
-                            selected_track_names.append(track_name)
-                    # 累计音符数
-                    total_notes += info['note_count']
-            
-            # 构建选中音轨的显示字符串
-            tracks_str = "、".join(selected_track_names)
-            
-            # 更新第一行文本
-            # 获取配置的最低音和最高音
-            config_min_note = 48  # 默认值
-            config_max_note = 83  # 默认值
-            try:
-                from midi_analyzer import MidiAnalyzer
-                config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
-            except:
-                pass
-            
-            # 导入get_note_name函数
-            try:
-                from groups import get_note_name
-            except:
-                # 如果导入失败，创建一个简单的替代函数
-                def get_note_name(note):
-                    return str(note)
-            
-            first_line = f"音轨{{{tracks_str}}}   移调:{transpose}  转位:{octave}  总音符:{total_notes}"
-            
-            # 只使用已有的分析结果，不在这里生成新数据
-            if hasattr(self, 'current_analysis_result') and self.current_analysis_result:
-                analysis_result = self.current_analysis_result
-                
-                # 构建最高音和最低音的显示文本
-                if analysis_result['max_note'] is not None:
-                    max_note_text = f"最高音: {analysis_result['max_note_name']}({analysis_result['max_note']})  {analysis_result['max_note_group']}  "
-                    max_note_text += "超限" if analysis_result['is_max_over_limit'] else "未超限"
-                    max_note_text += f"  超限数量: {analysis_result['over_max_count']}"
-                else:
-                    max_note_text = "最高音: - 未检测"
-                
-                if analysis_result['min_note'] is not None:
-                    min_note_text = f"最低音: {analysis_result['min_note_name']}({analysis_result['min_note']})  {analysis_result['min_note_group']}  "
-                    min_note_text += "超限" if analysis_result['is_min_over_limit'] else "未超限"
-                    min_note_text += f"  超限数量: {analysis_result['under_min_count']}"
-                else:
-                    min_note_text = "最低音: - 未检测"
-                
-                # 计算建议移调和转位
-                suggestion_text = self._calculate_transpose_suggestion(analysis_result, config_min_note, config_max_note, transpose, octave)
-                
-                self.analysis_text = f"{first_line}\n{max_note_text}\n{min_note_text}\n{suggestion_text}"
-            else:
-                # 如果没有分析结果，显示提示文本
-                self.analysis_text = f"{first_line}\n最高音: - 未分析\n最低音: - 未分析"
+    def _on_mousewheel(self, event):
+        """处理鼠标滚轮事件，用于Canvas滚动"""
+        # 根据操作系统不同，event.delta的单位可能不同
+        # Windows上，event.delta是120的倍数
+        # macOS上，event.delta是-1或1
+        if hasattr(event, 'delta'):
+            # Windows上的处理方式
+            delta = event.delta
         else:
-            self.analysis_text = f"音轨{{无选中}}   移调:0  转位:0  总音符:0\n最高音: - 未检测\n最低音: - 未检测"
+            # 其他系统的处理方式
+            delta = -event.delta * 120
         
-        # 确保UI更新
-        self._update_analysis_text_widget()
+        # 垂直滚动Canvas
+        self.track_canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+        
+    def _update_canvas_scrollregion(self):
+        """更新Canvas的滚动区域，确保内容从顶部开始"""
+        bbox = self.track_canvas.bbox("all")
+        if bbox:
+            # 确保y0是0，防止向上滚动过多
+            self.track_canvas.configure(scrollregion=(0, 0, bbox[2], bbox[3]))
+        
+    def update_analysis_info(self):
+        """更新分析信息 - 支持单独音轨分析"""
+        if not self.current_file_path or not self.selected_tracks:
+            return
+        
+        # 创建一个线程来处理分析，避免UI冻结
+        def analyze_in_thread():
+            try:
+                # 为每个选中的音轨分析
+                for track_index in list(self.selected_tracks):
+                    self._analyze_single_track(track_index)
+                
+                # 更新Canvas的滚动区域，确保内容从顶部开始
+                self.root.after(0, lambda: self._update_canvas_scrollregion())
+                
+            except Exception as e:
+                print(f"分析音轨时出错: {str(e)}")
+        
+        # 启动分析线程
+        thread = threading.Thread(target=analyze_in_thread)
+        thread.daemon = True
+        thread.start()
     
     def _update_analysis_text_widget(self):
         """更新分析文本组件，支持超链接"""
@@ -1452,9 +1810,11 @@ class MainWindow:
                 char_in_line = start_index
                 line_start = 1
             
+            # 先移除旧的标签（如果存在）
+            self.analysis_text_widget.tag_remove("max_note_link", "1.0", tk.END)
             # 添加超链接样式
             self.analysis_text_widget.tag_add("max_note_link", f"{line_start}.{char_in_line}", f"{line_start}.{char_in_line + 4}")
-            self.analysis_text_widget.tag_config("max_note_link", foreground="blue", underline=True)
+            self.analysis_text_widget.tag_config("max_note_link", foreground="blue", underline=True, cursor="hand2")
             
             # 绑定点击事件
             self.analysis_text_widget.tag_bind("max_note_link", "<Button-1>", lambda e: self._apply_max_note_suggestion())
@@ -1474,9 +1834,11 @@ class MainWindow:
                 char_in_line = start_index
                 line_start = 1
             
+            # 先移除旧的标签（如果存在）
+            self.analysis_text_widget.tag_remove("min_note_link", "1.0", tk.END)
             # 添加超链接样式
             self.analysis_text_widget.tag_add("min_note_link", f"{line_start}.{char_in_line}", f"{line_start}.{char_in_line + 4}")
-            self.analysis_text_widget.tag_config("min_note_link", foreground="blue", underline=True)
+            self.analysis_text_widget.tag_config("min_note_link", foreground="blue", underline=True, cursor="hand2")
             
             # 绑定点击事件
             self.analysis_text_widget.tag_bind("min_note_link", "<Button-1>", lambda e: self._apply_min_note_suggestion())
@@ -1497,6 +1859,10 @@ class MainWindow:
         Returns:
             str: 建议文本，包含超链接
         """
+        # 初始化存储建议的字典（如果不存在）
+        if not hasattr(self, 'suggestion_cache'):
+            self.suggestion_cache = {}
+        
         # 检查是否有有效的最高音和最低音数据
         if analysis_result['max_note'] is None or analysis_result['min_note'] is None:
             return ""
@@ -1517,6 +1883,16 @@ class MainWindow:
             max_suggestions = self._optimize_transpose_suggestion(max_diff, current_transpose, current_octave)
             if max_suggestions:
                 best_suggestion = max_suggestions[0]  # 取最优解
+                # 存储建议结果，供后续应用时使用
+                self.suggestion_cache['max_note'] = {
+                    'transpose': best_suggestion['transpose'],
+                    'octave': best_suggestion['octave']
+                }
+                # 输出日志用于调试
+                print(f"最高音建议计算调试:")
+                print(f"  当前移调: {current_transpose}, 当前转位: {current_octave}")
+                print(f"  音高差: {max_diff}")
+                print(f"  显示的建议移调: {best_suggestion['transpose']}, 显示的建议转位: {best_suggestion['octave']}")
                 max_suggestion_text = f"<最高音>移调{best_suggestion['transpose']}，转位{best_suggestion['octave']}"
         
         # 计算最低音的建议移调和转位（只在超限时计算）
@@ -1527,6 +1903,16 @@ class MainWindow:
             min_suggestions = self._optimize_transpose_suggestion(min_diff, current_transpose, current_octave)
             if min_suggestions:
                 best_suggestion = min_suggestions[0]  # 取最优解
+                # 存储建议结果，供后续应用时使用
+                self.suggestion_cache['min_note'] = {
+                    'transpose': best_suggestion['transpose'],
+                    'octave': best_suggestion['octave']
+                }
+                # 输出日志用于调试
+                print(f"最低音建议计算调试:")
+                print(f"  当前移调: {current_transpose}, 当前转位: {current_octave}")
+                print(f"  音高差: {min_diff}")
+                print(f"  显示的建议移调: {best_suggestion['transpose']}, 显示的建议转位: {best_suggestion['octave']}")
                 min_suggestion_text = f"<最低音>移调{best_suggestion['transpose']}，转位{best_suggestion['octave']}"
         
         # 构建建议文本
@@ -1558,16 +1944,16 @@ class MainWindow:
             # 计算需要的总移调量
             total_transpose_needed = diff - (octave_shift * 12)
             
-            # 计算最终的移调和转位值
+            # 计算最终的移调和转位值（叠加到当前设置上）
             final_transpose = current_transpose + total_transpose_needed
             final_octave = current_octave + octave_shift
             
             # 计算评分：移调+转位的绝对值（越小越好）
-            # 优先选择5、6、7这三个居中的值
+            # 使用绝对值进行评分，确保正数和负数有相同的权重
             score = abs(final_transpose) + abs(final_octave)
             
-            # 如果移调值在5、6、7范围内，给予额外加分（优先级更高）
-            if final_transpose in [5, 6, 7]:
+            # 如果移调值的绝对值在5、6、7范围内，给予额外加分（优先级更高）
+            if 5 <= abs(final_transpose) <= 7:
                 score -= 0.5  # 给予加分，使这些值优先级更高
             
             suggestions.append({
@@ -1580,6 +1966,70 @@ class MainWindow:
         suggestions.sort(key=lambda x: x['score'])
         
         return suggestions
+    
+    def _apply_max_note_suggestion(self, track_index=None):
+        """应用最高音的建议移调和转位设置到指定音轨"""
+        # 如果没有指定音轨，使用当前选中的第一个音轨
+        if track_index is None:
+            if not self.selected_tracks:
+                messagebox.showinfo("提示", "请先选择一个音轨")
+                return
+            track_index = next(iter(self.selected_tracks))
+        
+        # 检查是否有缓存的建议结果
+        if not hasattr(self, 'suggestion_cache') or 'max_note' not in self.suggestion_cache:
+            messagebox.showinfo("提示", "没有可用的最高音建议")
+            return
+        
+        # 获取缓存的建议结果
+        suggestion = self.suggestion_cache['max_note']
+        suggested_transpose = suggestion['transpose']
+        suggested_octave = suggestion['octave']
+        
+        # 输出日志用于调试
+        print(f"最高音建议应用调试:")
+        print(f"  直接应用缓存的建议值: 移调{suggested_transpose}, 转位{suggested_octave}")
+        
+        # 直接应用缓存的建议结果
+        self.track_transpose_vars[track_index].set(suggested_transpose)
+        self.track_octave_vars[track_index].set(suggested_octave)
+        
+        # 更新事件数据
+        self.update_event_data()
+        # 重新分析音轨
+        self._analyze_single_track(track_index)
+    
+    def _apply_min_note_suggestion(self, track_index=None):
+        """应用最低音的建议移调和转位设置到指定音轨"""
+        # 如果没有指定音轨，使用当前选中的第一个音轨
+        if track_index is None:
+            if not self.selected_tracks:
+                messagebox.showinfo("提示", "请先选择一个音轨")
+                return
+            track_index = next(iter(self.selected_tracks))
+        
+        # 检查是否有缓存的建议结果
+        if not hasattr(self, 'suggestion_cache') or 'min_note' not in self.suggestion_cache:
+            messagebox.showinfo("提示", "没有可用的最低音建议")
+            return
+        
+        # 获取缓存的建议结果
+        suggestion = self.suggestion_cache['min_note']
+        suggested_transpose = suggestion['transpose']
+        suggested_octave = suggestion['octave']
+        
+        # 输出日志用于调试
+        print(f"最低音建议应用调试:")
+        print(f"  直接应用缓存的建议值: 移调{suggested_transpose}, 转位{suggested_octave}")
+        
+        # 直接应用缓存的建议结果
+        self.track_transpose_vars[track_index].set(suggested_transpose)
+        self.track_octave_vars[track_index].set(suggested_octave)
+        
+        # 更新事件数据
+        self.update_event_data()
+        # 重新分析音轨
+        self._analyze_single_track(track_index)
     
     def _apply_transpose_suggestion(self):
         """应用建议的移调和转位设置"""
@@ -1636,8 +2086,8 @@ class MainWindow:
         
         messagebox.showinfo("提示", f"已应用建议设置：移调{self.transpose_var.get()}，转位{self.octave_var.get()}")
     
-    def _apply_max_note_suggestion(self):
-        """应用最高音的建议移调和转位设置"""
+    def _apply_max_note_suggestion_global(self):
+        """应用最高音的建议移调和转位设置（全局）"""
         # 获取当前的分析结果
         if not hasattr(self, 'current_analysis_result') or not self.current_analysis_result:
             messagebox.showinfo("提示", "没有可用的分析结果")
@@ -1678,47 +2128,7 @@ class MainWindow:
         # 更新显示（使用新的分析结果）
         self.update_analysis_info()
     
-    def _apply_min_note_suggestion(self):
-        """应用最低音的建议移调和转位设置"""
-        # 获取当前的分析结果
-        if not hasattr(self, 'current_analysis_result') or not self.current_analysis_result:
-            messagebox.showinfo("提示", "没有可用的分析结果")
-            return
-        
-        # 获取配置信息
-        config_min_note = 48  # 默认值
-        config_max_note = 83  # 默认值
-        try:
-            from midi_analyzer import MidiAnalyzer
-            config_min_note, config_max_note, _ = MidiAnalyzer._get_key_settings()
-        except:
-            pass
-        
-        # 获取当前设置
-        current_transpose = self.transpose_var.get()
-        current_octave = self.octave_var.get()
-        
-        # 计算最低音的建议移调和转位（使用新的优化逻辑）
-        analysis_result = self.current_analysis_result
-        min_diff = config_min_note - analysis_result['min_note']
-        
-        # 检查最低音是否超限
-        if not analysis_result.get('is_min_over_limit', False):
-            messagebox.showinfo("提示", "最低音没有超限，无需调整")
-            return
-        
-        # 使用优化逻辑计算建议
-        suggestions = self._optimize_transpose_suggestion(min_diff, current_transpose, current_octave)
-        if suggestions:
-            best_suggestion = suggestions[0]
-            self.transpose_var.set(best_suggestion['transpose'])
-            self.octave_var.set(best_suggestion['octave'])
-        
-        # 重新解析事件表（这会重新分析MIDI文件并更新分析结果）
-        self.update_event_data()
-        
-        # 更新显示（使用新的分析结果）
-        self.update_analysis_info()
+    # 删除重复的_apply_min_note_suggestion方法，保留第1924行有track_index参数的版本
     
     def _update_play_button_during_countdown(self, remaining_seconds):
         """倒计时期间更新播放按钮文本

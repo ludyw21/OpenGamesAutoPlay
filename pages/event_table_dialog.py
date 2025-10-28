@@ -111,52 +111,79 @@ class EventTableDialog:
     
     def populate_event_table(self):
         """填充事件表数据"""
+        print("[DEBUG-EventTable] 开始刷新事件表数据")
+        
         # 清空现有数据
         for item in self.tree.get_children():
             self.tree.delete(item)
         
         # 获取当前事件数据
         events = self.get_current_events()
+        print(f"[DEBUG-EventTable] 获取到 {len(events)} 个事件")
         
         # 尝试从main_window获取分析结果，如果有的话
         total_over_limit_count = 0
         if hasattr(self.main_window, 'current_analysis_result') and self.main_window.current_analysis_result:
             total_over_limit_count = self.main_window.current_analysis_result.get('total_over_limit_count', 0)
+            print(f"[DEBUG-EventTable] 从分析结果获取超限音符数量: {total_over_limit_count}")
         else:
             # 否则手动计算超限音符数量（只计算note_on事件）
             note_on_events = [e for e in events if e.get('type') == 'note_on']
             out_of_range_note_ons = [e for e in note_on_events if self.is_out_of_range(e)]
             total_over_limit_count = len(out_of_range_note_ons)
+            print(f"[DEBUG-EventTable] 手动计算超限音符数量: {total_over_limit_count}")
         
         # 更新超限音符数量显示
         self.out_of_range_count_var.set(f"超限音符数量：{total_over_limit_count}")
         
         # 根据显示设置筛选事件
         if self.show_only_out_of_range_var.get():
-            events = [e for e in events if self.is_out_of_range(e)]
+            filtered_events = [e for e in events if self.is_out_of_range(e)]
+            print(f"[DEBUG-EventTable] 仅显示超限音符，筛选后剩余 {len(filtered_events)} 个事件")
+            events = filtered_events
         
         # 显示所有事件数据，不再限制数量
         # 如果事件数量非常大，可以考虑添加配置选项来控制显示数量
         
         # 填充表格
         for i, event in enumerate(events):
+            # 确保事件包含必要的字段
+            if 'note' in event:
+                note_display = self._format_note_display(event['note'])
+                group_name = self._get_note_group(event['note'])
+                # 调试信息：只打印少量事件
+                if i < 5 or (i > len(events) - 6 and len(events) > 10):
+                    print(f"[DEBUG-EventTable] 事件{i+1}: 时间={event['time']}, 音符={event['note']}({note_display}), 分组={group_name}")
+            else:
+                note_display = "-"
+                group_name = "-"
+            
             values = [
                 i + 1,
                 f"{event['time']:.2f}",
                 event['type'],
-                self._format_note_display(event['note']),  # 格式化音符显示
+                note_display,
                 event['channel'],
-                self._get_note_group(event['note']),  # 获取正确的分组名称
+                group_name,
                 f"{event['end']:.2f}" if 'end' in event else "-",
                 f"{event['duration']:.2f}" if 'duration' in event else "-"
             ]
             self.tree.insert('', 'end', values=values)
+        
+        print(f"[DEBUG-EventTable] 事件表数据刷新完成，显示了 {len(events)} 个事件")
     
     def get_current_events(self):
         """获取当前事件数据 - 从MainWindow实例获取已解析好的事件数据"""
         # 从MainWindow实例获取事件数据
         if hasattr(self.main_window, 'current_events') and self.main_window.current_events:
-            return self.main_window.current_events
+            # 确保返回的是有效的事件列表
+            if isinstance(self.main_window.current_events, list):
+                print(f"[DEBUG-EventTable] 从main_window获取事件数据，共 {len(self.main_window.current_events)} 个事件")
+                return self.main_window.current_events
+            else:
+                print(f"[DEBUG-EventTable] main_window.current_events 不是有效的列表")
+        else:
+            print(f"[DEBUG-EventTable] main_window中没有有效的事件数据")
         
         # 如果没有实际数据，返回示例数据
         sample_events = []
@@ -182,6 +209,7 @@ class EventTableDialog:
                 'group': self._get_note_group(note)
             })
         
+        print(f"[DEBUG-EventTable] 返回示例事件数据，共 {len(sample_events)} 个事件")
         return sample_events
     
     def _get_note_group(self, note_number):
