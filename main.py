@@ -346,11 +346,9 @@ class MainWindow:
             
             # 创建Canvas作为滚动区域
             self.track_canvas = tk.Canvas(track_table_frame)
-            self.track_canvas.pack(side=tk.LEFT, fill=BOTH, expand=True)
             
             # 添加垂直滚动条
             self.track_scrollbar = ttk.Scrollbar(track_table_frame, orient=tk.VERTICAL, command=self.track_canvas.yview)
-            self.track_scrollbar.pack(side=tk.RIGHT, fill=Y)
             
             # 配置Canvas的滚动
             self.track_canvas.configure(yscrollcommand=self.track_scrollbar.set)
@@ -362,13 +360,52 @@ class MainWindow:
             # 绑定鼠标滚轮事件以支持滚动
             self.track_canvas.bind_all("<MouseWheel>", self._on_mousewheel)
             
-            # 当调整窗口大小时，调整Canvas中内容的宽度
+            # 当调整窗口大小时，调整Canvas中内容的宽度和处理滚动条按需显示
             def on_canvas_configure(event):
                 # 当Canvas宽度改变时，更新内部框架的宽度
                 width = event.width
                 self.track_canvas.itemconfig(self.track_canvas_window, width=width)
+                update_scrollbars()
             
+            # 当内部框架大小改变时，更新滚动区域
+            def on_track_rows_configure(event):
+                update_scrollbars()
+            
+            # 处理滚动条按需显示的函数
+            def update_scrollbars(event=None):
+                # 确保在更新前强制更新所有窗口大小
+                track_table_frame.update_idletasks()
+                self.track_rows_frame.update_idletasks()
+                
+                # 更新Canvas的滚动区域
+                bbox = self.track_canvas.bbox("all")
+                if bbox:
+                    # 确保内容从顶部开始，y0设为0
+                    self.track_canvas.configure(scrollregion=(0, 0, bbox[2], bbox[3]))
+                
+                # 获取Canvas的实际大小和内容大小
+                canvas_height = self.track_canvas.winfo_height()
+                content_height = self.track_rows_frame.winfo_height()
+                
+                # 垂直滚动条按需显示
+                if content_height > canvas_height + 10:  # 增加一点余量避免闪烁
+                    self.track_scrollbar.pack(side="right", fill="y")
+                    self.track_canvas.pack(side="left", fill=BOTH, expand=True)
+                else:
+                    self.track_scrollbar.pack_forget()
+                    self.track_canvas.pack(side="left", fill=BOTH, expand=True)
+                    # 确保内容始终在顶部
+                    self.track_canvas.yview_moveto(0)
+            
+            # 绑定事件
             self.track_canvas.bind('<Configure>', on_canvas_configure)
+            self.track_rows_frame.bind('<Configure>', on_track_rows_configure)
+            
+            # 初始显示Canvas
+            self.track_canvas.pack(side="left", fill=BOTH, expand=True)
+            
+            # 初始更新滚动条状态
+            update_scrollbars()
             
             # 操作区域LabelFrame
             operation_frame = ttk.LabelFrame(right_frame, text="操作", padding=10)
@@ -1741,18 +1778,31 @@ class MainWindow:
     
     def _on_mousewheel(self, event):
         """处理鼠标滚轮事件，用于Canvas滚动"""
-        # 根据操作系统不同，event.delta的单位可能不同
-        # Windows上，event.delta是120的倍数
-        # macOS上，event.delta是-1或1
-        if hasattr(event, 'delta'):
-            # Windows上的处理方式
-            delta = event.delta
-        else:
-            # 其他系统的处理方式
-            delta = -event.delta * 120
-        
-        # 垂直滚动Canvas
-        self.track_canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+        # 首先检查是否有track_canvas和track_rows_frame
+        if hasattr(self, 'track_canvas') and hasattr(self, 'track_rows_frame'):
+            # 更新窗口大小
+            self.track_canvas.update_idletasks()
+            self.track_rows_frame.update_idletasks()
+            
+            # 获取Canvas的实际大小和内容大小
+            canvas_height = self.track_canvas.winfo_height()
+            content_height = self.track_rows_frame.winfo_height()
+            
+            # 只有当内容高度大于Canvas高度时才允许滚动
+            if content_height > canvas_height + 10:
+                # 根据操作系统不同，event.delta的单位可能不同
+                if hasattr(event, 'delta'):
+                    # Windows上的处理方式
+                    delta = event.delta
+                else:
+                    # 其他系统的处理方式
+                    delta = -event.delta * 120
+                
+                # 垂直滚动Canvas
+                self.track_canvas.yview_scroll(int(-1 * (delta / 120)), "units")
+            else:
+                # 当内容不需要滚动时，确保内容始终在顶部
+                self.track_canvas.yview_moveto(0)
         
     def _update_canvas_scrollregion(self):
         """更新Canvas的滚动区域，确保内容从顶部开始"""
