@@ -155,6 +155,8 @@ class MainWindow:
         # 为每个音轨单独存储转音和转位设置
         self.track_transpose_vars = {}  # 存储每个音轨的移调设置
         self.track_octave_vars = {}    # 存储每个音轨的转位设置
+        self.track_vars = {}           # 存储每个音轨的复选框变量
+        self.track_ui_elements = {}    # 存储每个音轨的UI元素引用
         # 存储每个音轨的分析结果
         self.track_analysis_results = {}
         
@@ -326,9 +328,9 @@ class MainWindow:
                 def get_note_name(note):
                     return str(note)
             
-            # 创建音轨详情LabelFrame - 包含最低音和最高音信息
+            # 创建音轨详情LabelFrame - 包含最低音和最高音信息以及详细标题
             tracks_frame = ttk.LabelFrame(right_frame, 
-                                         text=f"音轨详情 ({get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note}))", 
+                                         text=f"音轨详情【 当前播放范围：{get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note}) 】",
                                          padding=10)
             tracks_frame.pack(fill=X, pady=5)
             
@@ -922,8 +924,8 @@ class MainWindow:
         if hasattr(self, 'octave_var'):
             self.octave_var.set(0)
         
-        # 解析MIDI文件，获取音轨信息
-        self._load_midi_tracks(file_path)
+        # 使用单次扫描方法加载和分析MIDI文件
+        self._load_and_analyze_midi(file_path)
         
         # 启用预览按钮（确保按钮已初始化）
         if hasattr(self, 'preview_button') and self.preview_button is not None:
@@ -935,6 +937,255 @@ class MainWindow:
             self.stop_midi_playback()
             # 自动开始播放新选择的MIDI
             self.start_midi_playback()
+    
+    def _load_and_analyze_midi(self, file_path):
+        """单次扫描MIDI文件，同时获取音轨信息和生成事件数据"""
+        try:
+            # 清空当前音轨列表
+            for widget in self.track_rows_frame.winfo_children():
+                widget.destroy()
+            
+            # 清空选中的音轨集合
+            self.selected_tracks.clear()
+            self.track_transpose_vars = {}
+            self.track_octave_vars = {}
+            self.track_analysis_results = {}
+            
+            # 显示加载状态
+            loading_label = ttk.Label(self.track_rows_frame, text="正在加载和分析MIDI文件...", padding=10)
+            loading_label.pack(fill=X)
+            self.root.update()
+            
+            # 导入必要的库
+            import mido
+            import threading
+            import time
+            from midi_analyzer import MidiAnalyzer
+            
+            def parse_and_analyze_in_thread():
+                """在线程中解析和分析MIDI文件，避免UI冻结"""
+                start_time = time.time()
+                
+                try:
+                    # 初始化数据结构
+                    all_tracks = set()  # 稍后会从track_names中获取
+                    selected_tracks = set()
+                    
+                    # 一次性扫描MIDI文件，同时获取事件数据、分析结果、音轨名称和音轨音符数量统计
+                    # 这是唯一一次扫描整个MIDI文件的地方
+                    events, analysis_result, track_names, track_note_counts = MidiAnalyzer.analyze_midi_file(
+                        file_path,
+                        all_tracks,  # 空集合表示分析所有音轨
+                        transpose=0,  # 初始移调为0
+                        octave_shift=0  # 初始转位为0
+                    )
+                    
+                    # 更新all_tracks集合
+                    all_tracks = set(track_names.keys())
+                    
+                    # 构建最终的音轨信息，过滤掉没有音符的音轨
+                    tracks_info = []
+                    for track_idx in track_names:
+                        # 只有有音符的音轨才显示
+                        if track_idx in track_note_counts and track_note_counts[track_idx] > 0:
+                            note_count = track_note_counts[track_idx]
+                            track_name = track_names[track_idx]
+                            
+                            # 使用专门的乱码修复方法处理音轨名称
+                            fixed_name = self._fix_mojibake(track_name)
+                            
+                            # 构建显示名称，添加音轨标号
+                            display_name = f"音轨{track_idx+1}：{fixed_name} ({note_count}个音符)"
+                            
+                            tracks_info.append({
+                                "track_index": track_idx, 
+                                "note_count": note_count, 
+                                "display_name": display_name,
+                                "original_name": track_name,
+                                "fixed_name": fixed_name
+                            })
+                            selected_tracks.add(track_idx)
+                    
+                    # 在主线程中更新UI
+                    def update_ui():
+                        # 移除加载状态
+                        loading_label.destroy()
+                        
+                        # 添加全选/取消全选控制行
+                        all_tracks_frame = ttk.Frame(self.track_rows_frame)
+                        all_tracks_frame.pack(fill=X, pady=2)
+                        
+                        # 全选复选框
+                        self.all_tracks_var = tk.BooleanVar(value=True)
+                        all_checkbox = ttk.Checkbutton(all_tracks_frame, variable=self.all_tracks_var, 
+                                                     command=self.toggle_select_all)
+                        all_checkbox.pack(side=LEFT, padx=5)
+                        
+                        # 全选标签
+                        ttk.Label(all_tracks_frame, text="全部音轨", font=('微软雅黑', 9, 'bold')).pack(side=LEFT, padx=5)
+                        
+                        # 添加音轨信息
+                        self.tracks_info = []
+                        
+                        # 为每个音轨创建独立的行
+                        for info in tracks_info:
+                            track_index = info["track_index"]
+                            
+                            # 创建音轨行框架
+                            track_frame = ttk.Frame(self.track_rows_frame)
+                            track_frame.pack(fill=X, pady=2, ipady=2)
+                            
+                            # 设置grid布局，让中间列占据剩余空间
+                            track_frame.grid_columnconfigure(1, weight=1)  # 中间列（分析区域）占据剩余空间
+                            
+                            # 第一列：复选框（固定宽度）
+                            track_var = tk.BooleanVar(value=True)
+                            track_checkbox = ttk.Checkbutton(track_frame, variable=track_var,
+                                                           command=lambda idx=track_index: self.toggle_track_selection(idx))
+                            track_checkbox.grid(row=0, column=0, sticky='nsw', padx=5)  # 左侧固定位置
+                            
+                            # 第二列：音轨及分析信息（自适应宽度）
+                            analysis_frame = ttk.LabelFrame(track_frame, text="音轨及分析")
+                            analysis_frame.grid(row=0, column=1, sticky='nsew', padx=5)  # 填充整行高度和宽度
+                            analysis_frame.grid_columnconfigure(0, weight=1)  # 内部列也设置权重
+                            
+                            # 音轨名称标签 - 添加更详细的信息
+                            track_name_label = ttk.Label(analysis_frame, text=info["display_name"], font=('微软雅黑', 9, 'bold'))
+                            track_name_label.pack(fill=X, padx=5, pady=2)  # 填充整个宽度
+                            
+                            # 分析结果文本框 - 初始就创建Text组件而非Label
+                            analysis_label = tk.Text(analysis_frame, height=3, font=('微软雅黑', 9), wrap=tk.WORD)
+                            analysis_label.insert(tk.END, "正在分析...")
+                            analysis_label.pack(fill=X, padx=5, pady=1)  # 填充整个宽度
+                            analysis_label.config(state=tk.DISABLED)  # 设置为只读
+                            
+                            # 第三列：转音设置（固定宽度）
+                            transpose_frame = ttk.LabelFrame(track_frame, text="转音设置")
+                            transpose_frame.grid(row=0, column=2, sticky='nse', padx=5)  # 右侧固定位置
+                            
+                            # 创建移调和转位控制
+                            track_transpose_var = tk.IntVar(value=0)
+                            track_octave_var = tk.IntVar(value=0)
+                            
+                            # 移调控制
+                            transpose_control_frame = ttk.Frame(transpose_frame)
+                            transpose_control_frame.pack(fill=X, pady=2)
+                            
+                            ttk.Label(transpose_control_frame, text="移调(半音):", font=('微软雅黑', 9)).pack(side=LEFT, padx=2)
+                            ttk.Button(transpose_control_frame, text="-", width=2,
+                                      command=lambda var=track_transpose_var, idx=track_index:
+                                          self.adjust_track_transpose(idx, var, -1)).pack(side=LEFT)
+                            transpose_entry = ttk.Entry(transpose_control_frame, textvariable=track_transpose_var, 
+                                                      width=3, justify='center', font=('微软雅黑', 9))
+                            transpose_entry.pack(side=LEFT, padx=1)
+                            # 添加事件监听器
+                            transpose_entry.bind('<Return>', lambda event, idx=track_index, var=track_transpose_var:
+                                                self.on_track_transpose_change(idx, var))
+                            transpose_entry.bind('<FocusOut>', lambda event, idx=track_index, var=track_transpose_var:
+                                                self.on_track_transpose_change(idx, var))
+                            ttk.Button(transpose_control_frame, text="+", width=2,
+                                      command=lambda var=track_transpose_var, idx=track_index:
+                                          self.adjust_track_transpose(idx, var, 1)).pack(side=LEFT)
+                            
+                            # 转位控制
+                            octave_control_frame = ttk.Frame(transpose_frame)
+                            octave_control_frame.pack(fill=X, pady=2)
+                            
+                            ttk.Label(octave_control_frame, text="转位(八度):", font=('微软雅黑', 9)).pack(side=LEFT, padx=2)
+                            ttk.Button(octave_control_frame, text="-", width=2,
+                                      command=lambda var=track_octave_var, idx=track_index:
+                                          self.adjust_track_octave(idx, var, -1)).pack(side=LEFT)
+                            octave_entry = ttk.Entry(octave_control_frame, textvariable=track_octave_var, 
+                                                    width=3, justify='center', font=('微软雅黑', 9))
+                            octave_entry.pack(side=LEFT, padx=1)
+                            # 添加事件监听器
+                            octave_entry.bind('<Return>', lambda event, idx=track_index, var=track_octave_var:
+                                            self.on_track_octave_change(idx, var))
+                            octave_entry.bind('<FocusOut>', lambda event, idx=track_index, var=track_octave_var:
+                                            self.on_track_octave_change(idx, var))
+                            ttk.Button(octave_control_frame, text="+", width=2,
+                                      command=lambda var=track_octave_var, idx=track_index:
+                                          self.adjust_track_octave(idx, var, 1)).pack(side=LEFT)
+                            
+                            # 存储音轨信息
+                            self.tracks_info.append({
+                                "track_index": track_index,
+                                "note_count": info["note_count"],
+                                "frame": track_frame,
+                                "checkbox_var": track_var,
+                                "analysis_label": analysis_label
+                            })
+                            
+                            # 存储转音和转位变量
+                            self.track_transpose_vars[track_index] = track_transpose_var
+                            self.track_octave_vars[track_index] = track_octave_var
+                            
+                            # 存储track_vars和分析结果
+                            self.track_vars[track_index] = track_var
+                            self.track_analysis_results[track_index] = {}
+                            
+                            # 保存UI元素引用
+                            self.track_ui_elements[track_index] = {
+                                "frame": track_frame,
+                                "checkbox": track_checkbox,
+                                "analysis_label": analysis_label
+                            }
+                        
+                        self.selected_tracks = selected_tracks
+                        
+                        # 保存MIDI文件路径
+                        self.current_file_path = file_path
+                        
+                        # 直接使用之前生成的事件数据和分析结果
+                        # 但需要根据当前的选中音轨过滤事件
+                        filtered_events = [e for e in events if e['track'] in selected_tracks]
+                        self.current_events = filtered_events
+                        self.current_analysis_result = analysis_result
+                        
+                        elapsed_time = time.time() - start_time
+                        print(f"成功加载和分析MIDI文件：{file_path}，共找到{len(self.tracks_info)}个有效音轨，生成{len(self.current_events)}个事件，耗时{elapsed_time:.2f}秒")
+                        
+                        # 更新分析信息显示（异步进行，避免UI冻结）
+                        self.root.after(100, self.update_analysis_info)
+                        
+                        # 启用试听MIDI按钮
+                        if hasattr(self, 'midi_play_button'):
+                            self.midi_play_button.config(state=NORMAL)
+                        
+                        # 初始化按钮状态：播放按钮亮，暂停按钮灰
+                        if hasattr(self, 'play_button'):
+                            self.play_button.config(state=NORMAL)
+                        if hasattr(self, 'stop_button'):
+                            self.stop_button.config(state=DISABLED)
+                        
+                        # 更新Canvas的滚动区域
+                        self.track_canvas.configure(scrollregion=self.track_canvas.bbox("all"))
+                            
+                        # 启用试听MIDI按钮
+                        if hasattr(self, 'midi_play_button'):
+                            self.midi_play_button.config(state=NORMAL)
+                    
+                    # 在主线程中执行UI更新
+                    self.root.after(0, update_ui)
+                    
+                except Exception as e:
+                    error_msg = f"解析MIDI文件时出错: {str(e)}"
+                    print(error_msg)
+                    # 在主线程中显示错误
+                    self.root.after(0, lambda: self._show_error_and_cleanup(error_msg, loading_label))
+            
+            # 启动解析线程
+            thread = threading.Thread(target=parse_and_analyze_in_thread)
+            thread.daemon = True
+            thread.start()
+            
+        except Exception as e:
+            error_msg = f"启动MIDI解析线程时出错: {str(e)}"
+            print(error_msg)
+            messagebox.showerror("MIDI错误", error_msg)
+            # 清理UI
+            for widget in self.track_rows_frame.winfo_children():
+                widget.destroy()
     
     def _fix_mojibake(self, text):
         """修复已被错误解码的字符串（ mojibake ）- 优化版本"""
@@ -1136,9 +1387,15 @@ class MainWindow:
                             analysis_frame.grid(row=0, column=1, sticky='nsew', padx=5)  # 填充整行高度和宽度
                             analysis_frame.grid_columnconfigure(0, weight=1)  # 内部列也设置权重
                             
-                            # 音轨名称标签
-                            track_name_label = ttk.Label(analysis_frame, text=info["display_name"], font=('微软雅黑', 9))
+                            # 音轨名称标签 - 添加更详细的信息
+                            track_name_label = ttk.Label(analysis_frame, text=info["display_name"], font=('微软雅黑', 9, 'bold'))
                             track_name_label.pack(fill=X, padx=5, pady=2)  # 填充整个宽度
+                            
+                            # 添加音轨详细信息
+                            details_label = ttk.Label(analysis_frame, 
+                                                     text=f"音轨索引: {track_index} | 原始名称: {info['original_name'] or '未命名'} | 音符数量: {info['note_count']}个", 
+                                                     font=('微软雅黑', 8), foreground='#555555')
+                            details_label.pack(fill=X, padx=5, pady=1)
                             
                             # 分析结果文本框 - 初始就创建Text组件而非Label
                             analysis_label = tk.Text(analysis_frame, height=4, font=('微软雅黑', 9), wrap=tk.WORD)
@@ -2647,7 +2904,7 @@ class MainWindow:
             
             # 加载上一首文件
             next_file = self.midi_files[prev_index]
-            self._load_midi_tracks(next_file)
+            self._load_and_analyze_midi(next_file)
             
             # 如果正在播放，自动开始播放新文件
             if hasattr(self.midi_player, 'playing') and self.midi_player.playing:
@@ -2677,7 +2934,7 @@ class MainWindow:
             
             # 加载下一首文件
             next_file = self.midi_files[next_index]
-            self._load_midi_tracks(next_file)
+            self._load_and_analyze_midi(next_file)
             
             # 如果正在播放，自动开始播放新文件
             if hasattr(self.midi_player, 'playing') and self.midi_player.playing:

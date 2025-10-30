@@ -64,6 +64,24 @@ def _gather_notes_from_mido(mid, selected_tracks):
     使用mido库精确解析MIDI文件，严格遵循MeowField_AutoPiano的解析逻辑
     激进优化版本：针对超大型MIDI文件进行性能优化
     """
+    # 初始化全局缓存变量
+    global _track_names_cache
+    _track_names_cache = {}
+    
+    # 先获取所有音轨名称
+    for track_idx, track in enumerate(mid.tracks):
+        # 默认音轨名称
+        track_name = f"Track {track_idx}"
+        # 检查是否有音轨名称消息
+        for msg in track:
+            if msg.type == 'track_name':
+                track_name = msg.name
+                break
+        # 存储音轨名称
+        _track_names_cache[track_idx] = track_name
+    
+    print(f"[统计] 音轨信息: {_track_names_cache}")
+    
     ticks_per_beat = getattr(mid, 'ticks_per_beat', 480)
     tempo = 500000  # default 120 BPM
     # 以绝对tick记录的tempo变化 (tick, tempo_us_per_beat)
@@ -151,12 +169,9 @@ def _gather_notes_from_mido(mid, selected_tracks):
                         }
                     event_count += 1
     
-    # 截断预分配的None值
-    if event_count < len(events):
-        events = events[:event_count]
-    
-    print(f"[性能统计] 解析完成，总事件数: {event_count}, 预分配容量: {len(events)}")
     # 转换为精确时间：基于 tempo_changes 分段积分（PPQ），SMPTE 简化为常量换算
+    # 过滤掉None值，确保events列表中只包含有效的事件对象
+    events = [e for e in events if e is not None]
     if not events:
         return []
 
@@ -229,43 +244,70 @@ def _gather_notes_from_mido(mid, selected_tracks):
     if not is_smpte:
         # 性能优化：批量处理事件时间计算
         for e in events:
-            st = tick_to_seconds_ppq(int(e['start_tick']))
-            et = tick_to_seconds_ppq(int(e['end_tick']))
-            e['start_time'] = st
-            e['end_time'] = max(et, st)
-            e['duration'] = max(0.0, e['end_time'] - e['start_time'])
-            e['group'] = group_for_note(e['note'])
+            if e is not None:
+                try:
+                    st = tick_to_seconds_ppq(int(e['start_tick']))
+                    et = tick_to_seconds_ppq(int(e['end_tick']))
+                    e['start_time'] = st
+                    e['end_time'] = max(et, st)
+                    e['duration'] = max(0.0, e['end_time'] - e['start_time'])
+                    e['group'] = group_for_note(e['note'])
+                except (KeyError, TypeError, ValueError) as ex:
+                    print(f"[警告] 处理事件时出错: {ex}")
     else:
         # 近似：按ticks线性映射到mido.length（若可用），保持事件相对位置
         max_tick = 0
         try:
-            max_tick = max(int(e['end_tick']) for e in events)
+            max_tick = max(int(e['end_tick']) for e in events if e is not None)
         except Exception:
             max_tick = 0
         scale = (mf_len / max_tick) if (mf_len > 0.0 and max_tick > 0) else 0.0
         if scale <= 0.0:
             # 无法近似时退化为默认120BPM（尽量避免抖动）
             for e in events:
-                st = (int(e['start_tick']) * tempo) / (ticks_per_beat * 1_000_000.0)  # 修正为1_000_000.0
-                et = (int(e['end_tick']) * tempo) / (ticks_per_beat * 1_000_000.0)  # 修正为1_000_000.0
-                e['start_time'] = st
-                e['end_time'] = max(et, st)
-                e['duration'] = max(0.0, e['end_time'] - e['start_time'])
-                e['group'] = group_for_note(e['note'])
+                if e is not None:
+                    try:
+                        st = (int(e['start_tick']) * tempo) / (ticks_per_beat * 1_000_000.0)
+                        et = (int(e['end_tick']) * tempo) / (ticks_per_beat * 1_000_000.0)
+                        e['start_time'] = st
+                        e['end_time'] = max(et, st)
+                        e['duration'] = max(0.0, e['end_time'] - e['start_time'])
+                        e['group'] = group_for_note(e['note'])
+                    except (KeyError, TypeError, ValueError) as ex:
+                        print(f"[警告] 处理SMPTE事件时出错: {ex}")
         else:
             for e in events:
-                st = int(e['start_tick']) * scale
-                et = int(e['end_tick']) * scale
-                e['start_time'] = st
-                e['end_time'] = max(et, st)
-                e['duration'] = max(0.0, e['end_time'] - e['start_time'])
-                e['group'] = group_for_note(e['note'])
+                if e is not None:
+                    try:
+                        st = int(e['start_tick']) * scale
+                        et = int(e['end_tick']) * scale
+                        e['start_time'] = st
+                        e['end_time'] = max(et, st)
+                        e['duration'] = max(0.0, e['end_time'] - e['start_time'])
+                        e['group'] = group_for_note(e['note'])
+                    except (KeyError, TypeError, ValueError) as ex:
+                        print(f"[警告] 处理SMPTE事件时出错: {ex}")
     
     # 过滤选中的音轨
     if selected_tracks:
-        events = [e for e in events if e['track'] in selected_tracks]
+        events = [e for e in events if e is not None and 'track' in e and e['track'] in selected_tracks]
     
-    return events
+    # 统计每个音轨的音符数量
+    track_note_counts = {}
+    for event in events:
+        if event is not None:
+            track_idx = event.get('track')
+            if track_idx is not None:
+                if track_idx not in track_note_counts:
+                    track_note_counts[track_idx] = 0
+                track_note_counts[track_idx] += 1
+    print(f"[统计] 各音轨音符数量: {track_note_counts}")
+    
+    return events, track_note_counts
+
+
+# 全局变量，用于存储最近一次解析的音轨名称信息
+_track_names_cache = {}
 
 
 class MidiAnalyzer:
@@ -274,6 +316,17 @@ class MidiAnalyzer:
     # 默认音域范围
     DEFAULT_MIN_NOTE = 48
     DEFAULT_MAX_NOTE = 83
+    
+    @staticmethod
+    def get_track_names():
+        """
+        获取最近一次解析的MIDI文件的音轨名称信息
+        
+        Returns:
+            dict: 音轨索引到音轨名称的映射
+        """
+        global _track_names_cache
+        return _track_names_cache.copy()
     
     @staticmethod
     def _get_key_settings():
@@ -352,9 +405,10 @@ class MidiAnalyzer:
             octave_shift: 转位值（八度），默认为0
             
         Returns:
-            tuple: (events, analysis_result)
+            tuple: (events, analysis_result, track_names)
                 events: 生成的事件列表，按时间排序
                 analysis_result: 分析结果字典，包含超限信息
+                track_names: 音轨索引到音轨名称的映射
         """
         try:
             # 检查文件是否存在
@@ -418,7 +472,7 @@ class MidiAnalyzer:
             try:
                 mid = mido.MidiFile(file_path)
                 # 使用新的精确解析函数
-                events = _gather_notes_from_mido(mid, selected_tracks)
+                events, track_note_counts = _gather_notes_from_mido(mid, selected_tracks)
                 
                 # 将事件转换为note_on/note_off格式以保持兼容性
                 formatted_events = []
@@ -514,7 +568,9 @@ class MidiAnalyzer:
                 }
                 
                 print(f"[MidiAnalyzer] 使用mido精确解析成功，事件数量: {len(events)}")
-                return sorted(events, key=lambda x: x['time']), analysis_result
+                # 获取音轨名称信息
+                track_names = MidiAnalyzer.get_track_names()
+                return sorted(events, key=lambda x: x['time']), analysis_result, track_names, track_note_counts
                 
             except Exception as mido_error:
                 print(f"[MidiAnalyzer] mido解析失败: {str(mido_error)}")
@@ -537,7 +593,7 @@ class MidiAnalyzer:
                     'octave_shift': octave_shift,
                     'black_key_mode': black_key_mode,
                     'error': "mido库解析失败"
-                }
+                }, {}, {}
             
 
         except Exception as e:
@@ -562,4 +618,4 @@ class MidiAnalyzer:
                 'transpose': transpose,
                 'octave_shift': octave_shift,
                 'black_key_mode': None
-            }
+            }, {}, {}
