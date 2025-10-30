@@ -300,12 +300,70 @@ class MainWindow:
             self.search_input.bind("<FocusIn>", lambda e: self.search_input.delete(0, END))
             self.search_input.bind("<KeyRelease>", lambda e: self.filter_songs())
             
-            # 歌曲列表 - 适应左侧框架宽度
-            self.song_list = ttk.Treeview(left_frame, columns=["song"], show="headings")  # 适配左侧宽度
-            self.song_list.heading("song", text="歌曲列表", anchor='center')  # 设置标题居中
-            self.song_list.column("song", stretch=YES)  # 允许拉伸以占满空间
-            self.song_list.pack(fill=BOTH, expand=YES, pady=5)
+            # 修改滚动条样式使其更宽
+            style = ttk.Style()
+            # 对于Windows主题，需要设置箭头按钮的宽度和滑块的宽度
+            style.configure("Wide.TScrollbar", arrowsize=20, width=20)
+            # 为滚动条轨道和滑块设置明确的宽度
+            style.layout("Wide.TScrollbar", [
+                ('Vertical.Scrollbar.trough', {'sticky': 'nswe', 'children': [
+                    ('Vertical.Scrollbar.thumb', {'expand': '1', 'sticky': 'nswe'})
+                ]})
+            ])
+            
+            # 创建歌曲列表的垂直滚动条 - 将使用绝对定位叠加在列表上
+            self.song_scrollbar = ttk.Scrollbar(left_frame, orient=tk.VERTICAL, style="Wide.TScrollbar")
+            
+            # 创建歌曲列表 - 适应左侧框架宽度
+            self.song_list = ttk.Treeview(left_frame, columns=["song"], show="headings", yscrollcommand=self.song_scrollbar.set)
+            
+            # 配置滚动条与Treeview的关联
+            self.song_scrollbar.config(command=self.song_list.yview)
+            
+            # 设置列表属性
+            self.song_list.heading("song", text="歌曲列表", anchor='center')
+            self.song_list.column("song", width=160)  # 固定宽度以适应左侧面板
             self.song_list.bind("<<TreeviewSelect>>", lambda e: self.song_selected())
+            
+            # 绑定鼠标滚轮事件 - 只在歌曲列表上滚动时响应
+            self.song_list.bind("<MouseWheel>", self._on_song_list_mousewheel)
+            
+            # 先放置歌曲列表，占据完整空间
+            self.song_list.pack(fill=BOTH, expand=YES, pady=5)
+            
+            # 添加歌曲列表更新后的回调，用于控制滚动条显示
+            def on_song_list_updated(event=None):
+                # 强制更新布局
+                left_frame.update_idletasks()
+                
+                # 获取Treeview的实际可见高度和位置
+                visible_height = self.song_list.winfo_height()
+                x = self.song_list.winfo_x()
+                y = self.song_list.winfo_y()
+                width = self.song_list.winfo_width()
+                
+                # 获取项目数量并计算总高度
+                item_count = len(self.song_list.get_children())
+                item_height = 20  # 估算的每行高度
+                total_height = item_count * item_height
+                
+                # 按需显示滚动条
+                if item_count > 0 and total_height > visible_height:
+                    # 使用place方法将滚动条绝对定位在歌曲列表的右侧
+                    # 当使用in_参数时，坐标是相对于父窗口的
+                    scroll_width = 20  # 显式设置滚动条宽度
+                    # 不使用in_参数，直接使用相对于left_frame的坐标
+                    self.song_scrollbar.place(x=width-scroll_width, y=y, width=scroll_width, height=visible_height)
+                    self.song_scrollbar.lift()  # 确保滚动条在顶层
+                else:
+                    # 不需要滚动条时隐藏
+                    self.song_scrollbar.place_forget()
+            
+            # 保存回调函数引用，以便后续调用
+            self._on_song_list_updated = on_song_list_updated
+            
+            # 初始调用一次
+            on_song_list_updated()
             
             # 右侧框架 - 自适应宽度
             right_frame = ttk.LabelFrame(main_frame, text="播放控制", padding=10)
@@ -836,6 +894,10 @@ class MainWindow:
         for file_path in self.midi_files:
             file_name = os.path.basename(file_path)
             self.song_list.insert('', END, values=[file_name], tags=(file_path,))
+        
+        # 更新滚动条显示状态
+        if hasattr(self, '_on_song_list_updated'):
+            self._on_song_list_updated()
     
     def disable_keyboard_hooks(self):
         """暂时禁用所有键盘钩子，用于快捷键设置时避免冲突"""
@@ -905,6 +967,10 @@ class MainWindow:
             file_name = os.path.basename(file_path)
             if search_text in file_name.lower():
                 self.song_list.insert('', END, values=[file_name], tags=(file_path,))
+        
+        # 更新滚动条显示状态
+        if hasattr(self, '_on_song_list_updated'):
+            self._on_song_list_updated()
     
     def song_selected(self):
         """选择歌曲时的处理"""
@@ -1804,7 +1870,9 @@ class MainWindow:
         self.update_analysis_info()
     
     def _on_mousewheel(self, event):
-        """处理鼠标滚轮事件，用于Canvas滚动"""
+        """处理鼠标滚轮事件，只用于音轨列表Canvas滚动"""
+        # 歌曲列表的滚动已通过单独的_on_song_list_mousewheel方法处理
+        
         # 首先检查是否有track_canvas和track_rows_frame
         if hasattr(self, 'track_canvas') and hasattr(self, 'track_rows_frame'):
             # 更新窗口大小
@@ -1831,6 +1899,15 @@ class MainWindow:
                 # 当内容不需要滚动时，确保内容始终在顶部
                 self.track_canvas.yview_moveto(0)
         
+    def _on_song_list_mousewheel(self, event):
+        """处理歌曲列表的鼠标滚轮事件"""
+        # 计算滚动方向
+        delta = event.delta if hasattr(event, 'delta') else -event.num
+        # 滚动歌曲列表
+        self.song_list.yview_scroll(int(-1 * (delta / 120)), "units")
+        # 在Tkinter中，return "break"可以阻止事件冒泡
+        return "break"
+    
     def _update_canvas_scrollregion(self):
         """更新Canvas的滚动区域，确保内容从顶部开始"""
         bbox = self.track_canvas.bbox("all")
