@@ -518,12 +518,16 @@ class MainWindow:
                 print(f"[DEBUG] 全局移调: {global_transpose}, 全局转位: {global_octave_shift}")
                 
                 # 使用MidiAnalyzer来生成事件数据，传递全局移调和转位参数
-                events, analysis_result = MidiAnalyzer.analyze_midi_file(
+                events, analysis_result, track_names, track_note_counts = MidiAnalyzer.analyze_midi_file(
                     self.current_file_path, 
                     self.selected_tracks,
                     transpose=global_transpose,
                     octave_shift=global_octave_shift
                 )
+                # 保存音轨名称映射和音符计数
+                self.track_names = track_names
+                self.track_note_counts = track_note_counts
+                print(f"[DEBUG] 音轨音符计数: {track_note_counts}")
                 
                 # 应用单个音轨的移调和转位设置
                 if hasattr(self, 'track_transpose_vars') and hasattr(self, 'track_octave_vars'):
@@ -1106,6 +1110,21 @@ class MainWindow:
                             ttk.Button(octave_control_frame, text="+", width=2,
                                       command=lambda var=track_octave_var, idx=track_index:
                                           self.adjust_track_octave(idx, var, 1)).pack(side=LEFT)
+                            
+                            # 重置转音超链接文本
+                            reset_frame = ttk.Frame(transpose_frame)
+                            reset_frame.pack(fill=X, pady=2)
+                            
+                            # 创建超链接样式的标签
+                            reset_label = ttk.Label(reset_frame, text="<重置转音>", 
+                                                  foreground="blue", cursor="hand2",
+                                                  font=('微软雅黑', 9, 'underline'))
+                            reset_label.pack(side=RIGHT, padx=5)
+                            
+                            # 绑定点击事件
+                            reset_label.bind("<Button-1>", lambda event, idx=track_index, 
+                                            t_var=track_transpose_var, o_var=track_octave_var:
+                                            self.reset_track_transpose(idx, t_var, o_var))
                             
                             # 存储音轨信息
                             self.tracks_info.append({
@@ -1734,43 +1753,58 @@ class MainWindow:
     
     def on_track_transpose_change(self, track_index, var):
         """当单个音轨的移调值改变时"""
-        try:
-            # 确保值是整数
-            value = var.get()
-            var.set(int(value))
-            print(f"[DEBUG] 音轨{track_index}移调值改变为: {var.get()}")
+        # 调用统一的更新函数
+        self.update_track_transpose(track_index, transpose_var=var)
+    
+    def update_track_transpose(self, track_index, transpose_value=None, octave_value=None, transpose_var=None, octave_var=None):
+        """统一处理音轨转音设置更新（移调和转位）"""
+        # 如果提供了变量引用，确保值是整数
+        if transpose_var:
+            try:
+                value = transpose_var.get()
+                transpose_var.set(int(value))
+                print(f"[DEBUG] 音轨{track_index}移调值: {transpose_var.get()}")
+            except ValueError:
+                transpose_var.set(0)
+                print(f"[DEBUG] 音轨{track_index}移调值无效，已重置为0")
+        
+        if octave_var:
+            try:
+                value = octave_var.get()
+                octave_var.set(int(value))
+                print(f"[DEBUG] 音轨{track_index}转位值: {octave_var.get()}")
+            except ValueError:
+                octave_var.set(0)
+                print(f"[DEBUG] 音轨{track_index}转位值无效，已重置为0")
+        
+        # 如果提供了具体值，直接设置
+        if transpose_value is not None and transpose_var:
+            transpose_var.set(transpose_value)
+            print(f"[DEBUG] 音轨{track_index}移调值设置为: {transpose_value}")
             
-            # 重新分析该音轨
+        if octave_value is not None and octave_var:
+            octave_var.set(octave_value)
+            print(f"[DEBUG] 音轨{track_index}转位值设置为: {octave_value}")
+        
+        # 重新分析该音轨
+        if hasattr(self, 'selected_tracks') and track_index in self.selected_tracks:
             self._analyze_single_track(track_index)
-            
-            # 更新事件数据
-            self.update_event_data()
-            print(f"[DEBUG] 音轨{track_index}移调后事件数据已更新")
-            
-        except ValueError:
-            # 如果输入无效，重置为0
-            var.set(0)
-            print(f"[DEBUG] 音轨{track_index}移调值无效，已重置为0")
+        
+        # 更新事件数据
+        self.update_event_data()
+        print(f"[DEBUG] 音轨{track_index}转音设置已更新，事件数据已刷新")
+    
+    def reset_track_transpose(self, track_index, transpose_var, octave_var):
+        """重置音轨的移调和转位设置"""
+        # 调用统一的更新函数，设置移调和转位为0
+        self.update_track_transpose(track_index, transpose_value=0, octave_value=0, 
+                                  transpose_var=transpose_var, octave_var=octave_var)
+        print(f"音轨{track_index}已重置转音设置")
     
     def on_track_octave_change(self, track_index, var):
         """当单个音轨的转位值改变时"""
-        try:
-            # 确保值是整数
-            value = var.get()
-            var.set(int(value))
-            print(f"[DEBUG] 音轨{track_index}转位值改变为: {var.get()}")
-            
-            # 重新分析该音轨
-            self._analyze_single_track(track_index)
-            
-            # 更新事件数据
-            self.update_event_data()
-            print(f"[DEBUG] 音轨{track_index}转位后事件数据已更新")
-            
-        except ValueError:
-            # 如果输入无效，重置为0
-            var.set(0)
-            print(f"[DEBUG] 音轨{track_index}转位值无效，已重置为0")
+        # 调用统一的更新函数
+        self.update_track_transpose(track_index, octave_var=var)
     
     def _analyze_single_track(self, track_index):
         """分析单个音轨"""
