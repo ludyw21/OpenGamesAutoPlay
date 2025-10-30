@@ -96,6 +96,11 @@ class MainWindow:
         self.root = root
         self.root.title(f"开放世界-自动演奏by深瞳潜入梦-{VERSION}")
         
+        # 创建配置管理器实例
+        self.config_manager = Config()
+        # 从配置管理器获取配置
+        self.config = self.config_manager.data
+        
         # 获取DPI缩放比例
         dpi_scale = 1.0
         if hasattr(os, 'name') and os.name == 'nt':
@@ -110,14 +115,45 @@ class MainWindow:
         scaled_width = int(base_width * dpi_scale)
         scaled_height = int(base_height * dpi_scale)
         
-        self.root.geometry(f"{scaled_width}x{scaled_height}")
-        self.root.minsize(scaled_width, scaled_height)
-        self.root.resizable(True, True)  # 允许调整窗口大小
+        # 检查是否有保存的窗口大小和位置
+        saved_width = self.config.get('window_width')
+        saved_height = self.config.get('window_height')
+        saved_x = self.config.get('window_x')
+        saved_y = self.config.get('window_y')
         
-        # 创建配置管理器实例
-        self.config_manager = Config()
-        # 从配置管理器获取配置
-        self.config = self.config_manager.data
+        # 先获取屏幕尺寸
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # 优先使用保存的位置（即使没有保存大小）
+        if saved_x is not None and saved_y is not None:
+            # 确定要使用的宽度和高度
+            target_width = saved_width if saved_width else scaled_width
+            target_height = saved_height if saved_height else scaled_height
+            
+            # 确保窗口位置不会超出屏幕（添加边界检查）
+            x = max(0, min(saved_x, screen_width - target_width))
+            y = max(0, min(saved_y, screen_height - target_height))
+            
+            # 一次性设置大小和位置
+            self.root.geometry(f"{target_width}x{target_height}+{x}+{y}")
+            print(f"应用保存的窗口位置: {target_width}x{target_height}+{x}+{y}")
+        elif saved_width and saved_height:
+            # 只有保存的大小，没有保存的位置，居中显示
+            x = (screen_width - saved_width) // 2
+            y = (screen_height - saved_height) // 2
+            self.root.geometry(f"{saved_width}x{saved_height}+{x}+{y}")
+            print(f"应用保存的窗口大小并居中: {saved_width}x{saved_height}+{x}+{y}")
+        else:
+            # 使用默认的缩放后尺寸并居中
+            x = (screen_width - scaled_width) // 2
+            y = (screen_height - scaled_height) // 2
+            self.root.geometry(f"{scaled_width}x{scaled_height}+{x}+{y}")
+            print(f"应用默认窗口大小并居中: {scaled_width}x{scaled_height}+{x}+{y}")
+        
+        self.root.minsize(scaled_width, scaled_height)  # 保持最小尺寸限制
+        
+        self.root.resizable(True, True)  # 允许调整窗口大小
         
         # 设置主题
         theme = self.config.get('theme', 'pink')
@@ -201,6 +237,27 @@ class MainWindow:
         # 设置关闭事件
         self.root.protocol("WM_DELETE_WINDOW", self.close_event)
     
+    def center_window(self):
+        """将窗口居中显示"""
+        # 更新窗口信息
+        self.root.update_idletasks()
+        
+        # 获取窗口宽度和高度
+        width = self.root.winfo_width()
+        height = self.root.winfo_height()
+        
+        # 获取屏幕宽度和高度
+        screen_width = self.root.winfo_screenwidth()
+        screen_height = self.root.winfo_screenheight()
+        
+        # 计算居中位置
+        x = (screen_width - width) // 2
+        y = (screen_height - height) // 2
+        
+        # 设置窗口位置
+        self.root.geometry(f"{width}x{height}+{x}+{y}")
+        print(f"窗口居中: {width}x{height}+{x}+{y}")
+        
     def start_timers(self):
         """启动所有定时器"""
         # 进度更新定时器
@@ -232,6 +289,35 @@ class MainWindow:
             # 保存配置
             if hasattr(self, 'config'):
                 self.config['last_directory'] = self.last_directory
+                # 保存窗口大小和位置
+                current_width = self.root.winfo_width()
+                current_height = self.root.winfo_height()
+                current_x = self.root.winfo_x()
+                current_y = self.root.winfo_y()
+                
+                # 只有当窗口大小与初始大小有明显差异时才保存
+                base_width, base_height = 750, 520
+                dpi_scale = 1.0
+                if hasattr(os, 'name') and os.name == 'nt':
+                    try:
+                        import ctypes
+                        dpi_scale = ctypes.windll.shcore.GetScaleFactorForDevice(0) / 100
+                    except:
+                        pass
+                scaled_width = int(base_width * dpi_scale)
+                scaled_height = int(base_height * dpi_scale)
+                
+                # 保存窗口大小和位置
+                if abs(current_width - scaled_width) > 10 or abs(current_height - scaled_height) > 10:
+                    self.config['window_width'] = current_width
+                    self.config['window_height'] = current_height
+                    print(f"保存窗口大小: {current_width}x{current_height}")
+                
+                # 始终保存窗口位置
+                self.config['window_x'] = current_x
+                self.config['window_y'] = current_y
+                print(f"保存窗口位置: {current_x}, {current_y}")
+                
                 self.config_manager.save(self.config)
             
             # 停止所有定时器
