@@ -387,13 +387,13 @@ class MainWindow:
                     return str(note)
             
             # 创建音轨详情LabelFrame - 包含最低音和最高音信息以及详细标题
-            tracks_frame = ttk.LabelFrame(right_frame, 
+            self.tracks_frame = ttk.LabelFrame(right_frame, 
                                          text=f"音轨详情【 当前播放范围：{get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note}) 】",
                                          padding=10)
-            tracks_frame.pack(fill=X, pady=5)
+            self.tracks_frame.pack(fill=X, pady=5)
             
             # 当前歌曲名称标签 - 设置为不换行，超出部分不显示，占满整行
-            song_label_frame = ttk.Frame(tracks_frame)
+            song_label_frame = ttk.Frame(self.tracks_frame)
             song_label_frame.pack(fill=X, pady=2)
             
             # 设置文本左对齐，wraplength=0确保不换行，超出部分会自动截断
@@ -401,7 +401,7 @@ class MainWindow:
             self.current_song_label.pack(fill=X, expand=True)
             
             # 创建音轨列表表格框架 - 支持垂直滚动
-            track_table_frame = ttk.Frame(tracks_frame)
+            track_table_frame = ttk.Frame(self.tracks_frame)
             track_table_frame.pack(fill=BOTH, expand=True, pady=5)
             
             # 创建Canvas作为滚动区域
@@ -943,14 +943,14 @@ class MainWindow:
                     return str(note)
                 print(f"[DEBUG] 使用替代的get_note_name函数")
             
-            # 更新analysis_frame的标题
-            if hasattr(self, 'analysis_frame'):
-                new_title = f"音轨分析 {get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note})"
+            # 更新tracks_frame的标题
+            if hasattr(self, 'tracks_frame'):
+                new_title = f"音轨详情【 当前播放范围：{get_note_name(config_min_note)}({config_min_note}) - {get_note_name(config_max_note)}({config_max_note}) 】"
                 print(f"[DEBUG] 准备更新标题为: {new_title}")
-                self.analysis_frame.config(text=new_title)
-                print(f"[DEBUG] 音轨分析标题已更新: {new_title}")
+                self.tracks_frame.config(text=new_title)
+                print(f"[DEBUG] 音轨详情标题已更新: {new_title}")
             else:
-                print("[DEBUG] analysis_frame属性不存在，无法更新标题")
+                print("[DEBUG] tracks_frame属性不存在，无法更新标题")
         except Exception as e:
             print(f"[DEBUG] 更新音轨分析标题时出错: {str(e)}")
             
